@@ -34,9 +34,6 @@ export class SlaxLocation implements ILocation {
     this._originalLocation = originalLocation;
 
     const originalHref = extractOriginalUrl(originalLocation.href);
-    console.log(
-      `LocationOverride: Creating new location object for ${originalHref}`
-    );
 
     this._url = new URL(originalHref!);
     this._href = originalHref!;

@@ -15,6 +15,7 @@ export class SlaxEnv {
     //@ts-ignore
     window._SLAX_obj_proxy = {};
 
+    this.setupDefinePropertyInterceptor();
     this.initWindowProxy();
     this.initDocumentProxy();
   }
@@ -46,7 +47,18 @@ export class SlaxEnv {
           }
         }
 
-        return Reflect.set(target, prop, value);
+        const result = Reflect.set(target, prop, value);
+
+        if (typeof prop === "string" && prop !== "_SLAX_obj_proxy") {
+          try {
+            //@ts-ignore
+            this.window._SLAX_obj_proxy[prop] = value;
+          } catch (e) {
+            console.error(`Error syncing global property: ${prop}`, e);
+          }
+        }
+
+        return result;
       },
     });
 
@@ -89,6 +101,38 @@ export class SlaxEnv {
     });
 
     this.objProxies.set(this.window.document, documentProxy);
+  }
+
+  private setupDefinePropertyInterceptor(): void {
+    const originalDefineProperty = Object.defineProperty;
+    const self = this;
+
+    //@ts-ignore
+    Object.defineProperty = function (obj, prop, descriptor) {
+      const result = originalDefineProperty.call(this, obj, prop, descriptor);
+
+      if (
+        obj === self.window &&
+        typeof prop === "string" &&
+        prop !== "_SLAX_obj_proxy"
+      ) {
+        try {
+          const value = descriptor.value;
+          if (value !== undefined) {
+            //@ts-ignore
+            self.window._SLAX_obj_proxy[prop] = value;
+          } else if (descriptor.get) {
+            const value = self.window[prop];
+            //@ts-ignore
+            self.window._SLAX_obj_proxy[prop] = value;
+          }
+        } catch (e) {
+          console.error(`Error syncing defined property: ${prop}`, e);
+        }
+      }
+
+      return result;
+    };
   }
 
   private getAllOwnProps(obj: any): string[] {

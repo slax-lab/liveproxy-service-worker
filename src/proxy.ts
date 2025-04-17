@@ -38,10 +38,8 @@ export async function handleProxyRequest(
   mod: string,
   origUrl: string
 ): Promise<Response> {
-  // Create the proxy URL (used for both GET and POST requests)
   const proxyUrl = proxyPrefix + origUrl;
 
-  // Common header processing for all request types
   const headers = new Headers();
   for (const [key, value] of request.headers.entries()) {
     if (["host", "origin"].includes(key.toLowerCase())) {
@@ -53,7 +51,6 @@ export async function handleProxyRequest(
     headers.set(key, value);
   }
 
-  // Process referrer for all request types
   const refererUrl = new URL(request.referrer || request.url);
   if (
     refererUrl.pathname.includes("/proxy/") ||
@@ -62,7 +59,6 @@ export async function handleProxyRequest(
     const refMatch = refererUrl.pathname.match(REPLAY_URL_PREFIX);
     if (refMatch) {
       let refOrigUrl;
-      // 优先使用完整URL匹配
       if (refMatch[4]) {
         refOrigUrl = refMatch[4];
       } else if (refMatch[3]) {
@@ -85,13 +81,11 @@ export async function handleProxyRequest(
       }
     }
   } else {
-    // 如果referer不是代理URL，则直接传递
     headers.set("Referer", request.headers.get("Referer") || "");
   }
 
   headers.set("X-Proxy-User-Agent", request.headers.get("User-Agent")!);
 
-  // Create fetch options for all request types
   const fetchOpts: RequestInit = {
     method: request.method,
     headers: headers,
@@ -100,21 +94,14 @@ export async function handleProxyRequest(
     redirect: "manual" as RequestRedirect,
   };
 
-  // Handle request body for POST, PUT, PATCH
   if (["POST", "PUT", "PATCH"].includes(request.method)) {
-    console.log(`处理${request.method}请求到: ${proxyUrl}`);
-
-    // Add body to fetch options
     try {
-      // Similar to ArchiveRequest.getBody() in paste-3.txt
       if (request.body) {
         if (request.body instanceof ReadableStream) {
-          // For stream bodies, use duplex: "half"
           // @ts-ignore
           fetchOpts.duplex = "half";
           fetchOpts.body = request.body;
         } else {
-          // For other bodies, use arrayBuffer
           fetchOpts.body = await request.clone().arrayBuffer();
         }
       }
@@ -141,37 +128,29 @@ export async function handleProxyRequest(
   }
 
   try {
-    // Send the proxy request - using proxyUrl for both GET and POST
     const response = await fetch(proxyUrl, fetchOpts);
 
-    // Process response headers
     const respHeaders = processResponseHeaders(response.headers);
 
-    // Handle redirects
     const redirectStatus = respHeaders.get("x-redirect-status");
     if (redirectStatus) {
       const location = respHeaders.get("x-orig-location");
 
       if (location) {
-        // Create new redirect URL
         let newLocation;
 
         if (location.startsWith("/")) {
-          // Relative path (starts with /)
           const urlObj = new URL(origUrl);
           newLocation = `/w/liveproxy/mp_/${urlObj.origin}${location}`;
         } else if (location.startsWith("http")) {
-          // Absolute URL
           newLocation = `/w/liveproxy/mp_/${location}`;
         } else if (location.startsWith("//")) {
-          // Protocol-relative URL
           const urlObj = new URL(origUrl);
           newLocation = `/w/liveproxy/mp_/${urlObj.protocol.replace(
             ":",
             ""
           )}:${location}`;
         } else {
-          // Relative URL (no leading /)
           const urlObj = new URL(origUrl);
           const pathParts = urlObj.pathname.split("/");
           pathParts.pop();
@@ -179,22 +158,18 @@ export async function handleProxyRequest(
           newLocation = `/w/liveproxy/mp_/${urlObj.origin}${basePath}/${location}`;
         }
 
-        // Ensure no double slashes
         newLocation = newLocation.replace(/([^:])\/+/g, "$1/");
 
-        console.log(`重定向到: ${newLocation}`);
         return Response.redirect(newLocation, parseInt(redirectStatus));
       }
     }
 
-    // Clean up proxy headers
     respHeaders.delete("x-redirect-status");
     respHeaders.delete("x-redirect-statustext");
     respHeaders.delete("x-orig-location");
     respHeaders.delete("x-orig-ts");
     respHeaders.delete("x-proxy-set-cookie");
 
-    // For POST/PUT/PATCH requests that don't need content processing, return directly
     if (["POST", "PUT", "PATCH"].includes(request.method)) {
       return new Response(response.body, {
         status: response.status,
@@ -202,12 +177,10 @@ export async function handleProxyRequest(
       });
     }
 
-    // Content type detection and handling (mainly for GET requests)
     let contentType = respHeaders.get("content-type") || "";
     const url = new URL(origUrl);
     const path = url.pathname;
 
-    // Check if there's a response body
     const hasBody =
       response.status !== 204 &&
       response.status !== 304 &&
@@ -234,11 +207,9 @@ export async function handleProxyRequest(
 
     const contentTypeBase = getContentTypeBase(contentType);
 
-    // Special handling for iframe content - important for CSP bypass
     const isIframeContent =
       mod === "if_" || request.headers.get("Sec-Fetch-Dest") === "iframe";
 
-    // If no response body, return status code and response headers directly
     if (!hasBody) {
       return new Response(null, {
         status: response.status,
@@ -246,12 +217,10 @@ export async function handleProxyRequest(
       });
     }
 
-    // Content type branches
     if (contentTypeBase.includes("text/html") || isIframeContent) {
       const text = await response.text();
       const rewrittenHtml = completeHtmlRewrite(text, origUrl, timestamp);
 
-      // Ensure HTML content type
       respHeaders.set("Content-Type", "text/html; charset=UTF-8");
 
       return new Response(rewrittenHtml, {
@@ -275,7 +244,9 @@ export async function handleProxyRequest(
       contentTypeBase.includes("text/javascript")
     ) {
       const text = await response.text();
-      const isModule = contentType.includes("module");
+      const isModule =
+        contentType.includes("module") ||
+        contentType.includes("application/x-javascript");
       const rewrittenJs = rewriteJS(text, origUrl, timestamp, isModule);
 
       if (isModule) {
@@ -309,7 +280,6 @@ export async function handleProxyRequest(
         headers: respHeaders,
       });
     } else if (
-      // Handle font files
       contentTypeBase.includes("font/") ||
       contentTypeBase.includes("application/font") ||
       path.endsWith(".woff") ||
@@ -318,8 +288,6 @@ export async function handleProxyRequest(
       path.endsWith(".otf") ||
       path.endsWith(".eot")
     ) {
-      console.log(`处理字体文件: ${origUrl}`);
-      // Set correct content type
       if (path.endsWith(".woff2")) {
         respHeaders.set("Content-Type", "font/woff2");
       } else if (path.endsWith(".woff")) {
@@ -334,23 +302,15 @@ export async function handleProxyRequest(
         respHeaders.set("Content-Type", contentType);
       }
 
-      // Return font content directly
       return new Response(response.body, {
         status: response.status,
         headers: respHeaders,
       });
     } else if (
-      // Special handling for Google Fonts CSS files
       origUrl.includes("fonts.googleapis.com") &&
       origUrl.includes(".css")
     ) {
-      console.log(`origUrl: ${origUrl}`);
-      console.log(`处理Google Fonts CSS: ${origUrl}`);
-
-      // Get CSS content
       const text = await response.text();
-
-      // Ensure correct CSS content type
       respHeaders.set("Content-Type", "text/css; charset=UTF-8");
 
       return new Response(text, {
@@ -358,8 +318,6 @@ export async function handleProxyRequest(
         headers: respHeaders,
       });
     } else {
-      // Other content types
-      console.log(`处理其他内容类型: ${origUrl}`);
       return new Response(response.body, {
         status: response.status,
         headers: respHeaders,
@@ -371,7 +329,6 @@ export async function handleProxyRequest(
       error instanceof Error ? error.message : String(error)
     );
 
-    // Add more detailed error diagnostics
     let errorMessage = "Failed to fetch";
     let errorDetails = {};
 
@@ -380,21 +337,19 @@ export async function handleProxyRequest(
       errorDetails = {
         name: error.name,
         stack: error.stack,
-        // TypeScript might not support Error.cause
         // @ts-ignore
         cause: error.cause,
       };
-      console.log(`代理请求详细错误: ${JSON.stringify(errorDetails)}`);
+      console.log(`Slax Proxy Error: ${JSON.stringify(errorDetails)}`);
     } else if (typeof error === "object" && error !== null) {
       try {
         errorDetails = JSON.stringify(error);
-        console.log(`代理请求非标准错误对象: ${errorDetails}`);
+        console.log(`Slax Proxy Error: ${errorDetails}`);
       } catch (e) {
-        console.log(`代理请求无法序列化的错误对象: ${String(error)}`);
+        console.log(`Slax Proxy Error: ${String(error)}`);
       }
     }
 
-    // Error response
     return new Response(
       JSON.stringify({
         error: `Proxy error: ${errorMessage}`,
@@ -414,7 +369,6 @@ export async function handleProxyRequest(
   }
 }
 
-// 辅助函数：获取内容类型的基本部分
 export function getContentTypeBase(contentType: string | null): string {
   if (!contentType) return "";
   const parts = contentType.split(";");

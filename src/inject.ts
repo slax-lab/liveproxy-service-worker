@@ -1,34 +1,81 @@
-import { disablePostHost } from "./config";
+import { parseUrl } from "./url";
 import { SlaxLocation } from "./inject/location";
 import { SlaxEnv } from "./inject/proxy";
-import { extractOriginalUrl, rewriteUrl } from "./inject/utils";
 
 const originURL = "${originURL}";
 const proxyURL = "${proxyURL}";
 
-class SlaxInject {
-  private slaxLocation: SlaxLocation;
+(function () {
+  if ((window as any).__URL_REWRITER_INITIALIZED__) return;
+  (window as any).__URL_REWRITER_INITIALIZED__ = true;
 
-  constructor(private $window: Window) {
-    console.log("[Interceptor] Execution context:", {
-      isIframe: self !== top,
-      location: self.location.href,
-      parent: self.parent ? "exists" : "none",
-    });
+  function rewriteUrl(url: string, mod: string = "mp_"): string {
+    if (!url || typeof url !== "string") return url;
 
-    this.slaxLocation = new SlaxLocation(this.$window.location);
+    try {
+      const specialProtocols = [
+        "javascript:",
+        "data:",
+        "#",
+        "blob:",
+        "about:",
+        "mailto:",
+      ];
+      if (specialProtocols.some((protocol) => url.startsWith(protocol))) {
+        return url;
+      }
 
-    //@ts-ignore
-    this.$window._slaxLocation = this.slaxLocation;
-    //@ts-ignore
-    this.slaxEnv = new SlaxEnv(this.$window);
+      if (url.includes(proxyURL)) {
+        return url;
+      }
 
-    console.log("[SlaxInject] Injection completed");
+      let fullUrl = "";
+      try {
+        fullUrl = parseUrl(url, originURL);
+      } catch (e) {
+        return url;
+      }
 
-    this.initAllInterceptors();
+      return `${proxyURL}/w/liveproxy/${mod}/${fullUrl}`;
+    } catch (error) {
+      return url;
+    }
   }
 
-  createPropertyInterceptor(
+  /**
+   * 从代理URL中提取原始URL
+   * @param url 代理URL
+   * @returns 原始URL
+   */
+  function extractOriginalUrl(url: string | null): string | null {
+    if (!url || typeof url !== "string") return url;
+
+    // 先检查新格式的URL： /w/liveproxy/[mod]_/
+    const newProxyMatch = url.match(/\/w\/liveproxy\/[^\/]*([a-z_]+)\/(.+)/);
+    if (newProxyMatch) {
+      return newProxyMatch[2];
+    }
+
+    // 兼容旧格式的URL： /proxy/[mod]_/
+    const oldProxyMatch = url.match(/\/proxy\/[^\/]*([a-z_]+)\/(.+)/);
+    if (oldProxyMatch) {
+      return oldProxyMatch[2];
+    }
+
+    return url;
+  }
+
+  // ==========================================
+  // 通用属性拦截器工厂函数
+  // ==========================================
+
+  /**
+   * 创建通用的属性拦截器
+   * @param prototype 目标原型
+   * @param propName 属性名称
+   * @param mod 代理模式前缀
+   */
+  function createPropertyInterceptor(
     prototype: any,
     propName: string,
     mod: string = "mp_",
@@ -48,7 +95,7 @@ class SlaxInject {
       },
       set: function (this: HTMLElement, value: string): void {
         const finalMod = checkFn ? checkFn.call(this, this) : mod;
-        const rewrittenValue = rewriteUrl(value, proxyURL, originURL, finalMod);
+        const rewrittenValue = rewriteUrl(value, finalMod);
 
         if (originalDescriptor && originalDescriptor.set) {
           originalDescriptor.set.call(this, rewrittenValue);
@@ -61,7 +108,11 @@ class SlaxInject {
     });
   }
 
-  createSrcsetInterceptor(prototype: any): void {
+  /**
+   * 创建srcset属性拦截器
+   * @param prototype 目标原型
+   */
+  function createSrcsetInterceptor(prototype: any): void {
     const srcsetPropName = "_originalSrcset";
 
     Object.defineProperty(prototype, "srcset", {
@@ -81,7 +132,7 @@ class SlaxInject {
         const parts = value.split(",").map((part) => {
           const [url, ...descriptors] = part.trim().split(/\s+/);
           if (url && !url.startsWith("data:")) {
-            const rewrittenUrl = rewriteUrl(url, proxyURL, originURL, "mp_");
+            const rewrittenUrl = rewriteUrl(url, "mp_");
             return [rewrittenUrl, ...descriptors].join(" ");
           }
           return part;
@@ -94,7 +145,16 @@ class SlaxInject {
     });
   }
 
-  rewriteCssUrls(value: string): string {
+  // ==========================================
+  // CSS 属性拦截
+  // ==========================================
+
+  /**
+   * 重写CSS URL函数
+   * @param value CSS值
+   * @returns 重写后的CSS值
+   */
+  function rewriteCssUrls(value: string): string {
     if (!value || typeof value !== "string" || !value.includes("url(")) {
       return value;
     }
@@ -105,15 +165,17 @@ class SlaxInject {
         if (url.startsWith("data:") || url.startsWith("#")) {
           return match;
         }
-        const rewrittenUrl = rewriteUrl(url, proxyURL, originURL, "mp_");
+        const rewrittenUrl = rewriteUrl(url, "mp_");
         return `url(${quote}${rewrittenUrl}${quote})`;
       }
     );
   }
 
-  overrideStyleProperties(): void {
+  /**
+   * 拦截CSS样式属性
+   */
+  function overrideStyleProperties(): void {
     const originalSetProperty = CSSStyleDeclaration.prototype.setProperty;
-    const classBin = this;
 
     // 需要重写的CSS属性
     const cssPropertiesToRewrite: string[] = [
@@ -139,7 +201,7 @@ class SlaxInject {
         cssPropertiesToRewrite.includes(propertyName) &&
         value.includes("url(")
       ) {
-        value = classBin.rewriteCssUrls(value);
+        value = rewriteCssUrls(value);
       }
 
       return originalSetProperty.call(this, propertyName, value, priority);
@@ -166,7 +228,7 @@ class SlaxInject {
           },
           set: function (this: CSSStyleDeclaration, value: string): void {
             if (value && typeof value === "string" && value.includes("url(")) {
-              value = classBin.rewriteCssUrls(value);
+              value = rewriteCssUrls(value);
             }
             originalDescriptor.set!.call(this, value);
           },
@@ -177,10 +239,17 @@ class SlaxInject {
     });
   }
 
-  overrideFetch(): void {
-    const originalFetch = self.fetch;
+  // ==========================================
+  // 网络请求拦截
+  // ==========================================
 
-    self.fetch = function (
+  /**
+   * 拦截Fetch API
+   */
+  function overrideFetch(): void {
+    const originalFetch = window.fetch;
+
+    window.fetch = function (
       input: RequestInfo | URL,
       init?: RequestInit
     ): Promise<Response> {
@@ -203,24 +272,19 @@ class SlaxInject {
               "about:",
             ];
             if (
-              specialProtocols.some((protocol) => input.startsWith(protocol)) ||
-              disablePostHost.some((host) => host.test(input))
+              specialProtocols.some((protocol) => input.startsWith(protocol))
             ) {
               return originalFetch.call(this, input, init);
             }
 
-            rewrittenInput = rewriteUrl(input, proxyURL, originURL, "mp_");
-            console.log(
-              `[Fetch Interceptor] Rewrote URL: ${input} -> ${rewrittenInput}`
-            );
+            rewrittenInput = rewriteUrl(input, "mp_");
           } catch (error) {
             console.error("[Fetch Interceptor] Error rewriting URL:", error);
-            rewrittenInput = input; // 出错时使用原始URL
+            rewrittenInput = input;
           }
         } else if (input instanceof Request) {
           try {
             const originalUrl = input.url;
-            // 特殊URL协议不需要重写
             const specialProtocols = [
               "javascript:",
               "data:",
@@ -231,18 +295,12 @@ class SlaxInject {
             if (
               specialProtocols.some((protocol) =>
                 originalUrl.startsWith(protocol)
-              ) ||
-              disablePostHost.some((host) => host.test(originalUrl))
+              )
             ) {
               return originalFetch.call(this, input, init);
             }
 
-            const rewrittenUrl = rewriteUrl(
-              originalUrl,
-              proxyURL,
-              originURL,
-              "mp_"
-            );
+            const rewrittenUrl = rewriteUrl(originalUrl, "mp_");
             rewrittenInput = new Request(rewrittenUrl, input);
             console.log(
               `[Fetch Interceptor] Rewrote Request URL: ${originalUrl} -> ${rewrittenUrl}`
@@ -267,7 +325,10 @@ class SlaxInject {
     };
   }
 
-  overrideXHR(): void {
+  /**
+   * 拦截XMLHttpRequest
+   */
+  function overrideXHR(): void {
     const originalOpen = XMLHttpRequest.prototype.open;
 
     XMLHttpRequest.prototype.open = function (
@@ -299,10 +360,7 @@ class SlaxInject {
           "blob:",
           "about:",
         ];
-        if (
-          specialProtocols.some((protocol) => url.startsWith(protocol)) ||
-          disablePostHost.some((host) => host.test(url))
-        ) {
+        if (specialProtocols.some((protocol) => url.startsWith(protocol))) {
           return originalOpen.call(
             this,
             method,
@@ -313,9 +371,7 @@ class SlaxInject {
           );
         }
 
-        const rewrittenUrl = rewriteUrl(url, proxyURL, originURL, "mp_");
-
-        console.log(`[XHR Interceptor] Rewrote URL: ${url} -> ${rewrittenUrl}`);
+        const rewrittenUrl = rewriteUrl(url, "mp_");
 
         return originalOpen.call(
           this,
@@ -326,7 +382,6 @@ class SlaxInject {
           password
         );
       } catch (error) {
-        // 发生错误时记录并使用原始URL
         console.error("[XHR Interceptor] Error rewriting URL:", error);
         return originalOpen.call(
           this,
@@ -340,11 +395,18 @@ class SlaxInject {
     };
   }
 
-  overrideWorkers(): void {
+  // ==========================================
+  // Worker API 拦截
+  // ==========================================
+
+  /**
+   * 拦截Worker相关API
+   */
+  function overrideWorkers(): void {
     // Web Worker拦截
-    const originalWorker = self.Worker;
+    const originalWorker = window.Worker;
     //@ts-ignore
-    self.Worker = function (
+    window.Worker = function (
       url: string | URL,
       options?: WorkerOptions
     ): Worker {
@@ -352,7 +414,7 @@ class SlaxInject {
       let interceptedUrl = url;
 
       if (typeof url === "string") {
-        interceptedUrl = rewriteUrl(url, proxyURL, originURL, "js_");
+        interceptedUrl = rewriteUrl(url, "js_");
         console.log(
           `[Worker Interceptor] Rewrote Worker URL: ${url} -> ${interceptedUrl}`
         );
@@ -363,9 +425,9 @@ class SlaxInject {
 
     // Shared Worker拦截
     if (typeof SharedWorker !== "undefined") {
-      const originalSharedWorker = self.SharedWorker;
+      const originalSharedWorker = window.SharedWorker;
       //@ts-ignore
-      self.SharedWorker = function (
+      window.SharedWorker = function (
         url: string | URL,
         options?: string | WorkerOptions
       ): SharedWorker {
@@ -375,7 +437,7 @@ class SlaxInject {
         let interceptedUrl = url;
 
         if (typeof url === "string") {
-          interceptedUrl = rewriteUrl(url, proxyURL, originURL, "js_");
+          interceptedUrl = rewriteUrl(url, "js_");
           console.log(
             `[Worker Interceptor] Rewrote SharedWorker URL: ${url} -> ${interceptedUrl}`
           );
@@ -404,15 +466,22 @@ class SlaxInject {
     }
   }
 
-  disableNotifications(): void {
-    if (self.Notification) {
+  // ==========================================
+  // 敏感API拦截
+  // ==========================================
+
+  /**
+   * 禁用通知API
+   */
+  function disableNotifications(): void {
+    if (window.Notification) {
       // 模拟通知接口
       interface MockNotification {
         close: () => void;
       }
 
       // 重写Notification
-      self.Notification = function (
+      window.Notification = function (
         title: string,
         options?: NotificationOptions
       ): MockNotification {
@@ -427,7 +496,7 @@ class SlaxInject {
       } as unknown as typeof Notification;
 
       // 重写静态属性和方法
-      Object.defineProperties(self.Notification, {
+      Object.defineProperties(window.Notification, {
         permission: {
           get: function (): NotificationPermission {
             console.log(
@@ -449,7 +518,10 @@ class SlaxInject {
     }
   }
 
-  disableGeolocation(): void {
+  /**
+   * 禁用地理位置API
+   */
+  function disableGeolocation(): void {
     if (navigator.geolocation) {
       interface PositionError {
         code: number;
@@ -488,10 +560,17 @@ class SlaxInject {
           console.log("[Geolocation Interceptor] clearWatch called");
         },
       };
+
+      // 替换geolocation对象
+      //@ts-ignore
+      navigator.geolocation = mockGeolocation;
     }
   }
 
-  overrideBeacon(): void {
+  /**
+   * 重写Beacon API
+   */
+  function overrideBeacon(): void {
     if (navigator.sendBeacon) {
       const originalSendBeacon = navigator.sendBeacon;
       navigator.sendBeacon = function (
@@ -500,13 +579,12 @@ class SlaxInject {
       ): boolean {
         let rewrittenUrl = url;
 
-        // TODO: Beacon 先跳过，不处理
-        // if (typeof url === "string") {
-        //   rewrittenUrl = rewriteUrl(url, "mp_");
-        //   console.log(
-        //     `[Beacon Interceptor] Rewrote sendBeacon URL: ${url} -> ${rewrittenUrl}`
-        //   );
-        // }
+        if (typeof url === "string") {
+          rewrittenUrl = rewriteUrl(url, "mp_");
+          console.log(
+            `[Beacon Interceptor] Rewrote sendBeacon URL: ${url} -> ${rewrittenUrl}`
+          );
+        }
 
         console.log(`[Beacon Interceptor] sendBeacon to ${rewrittenUrl}`, data);
         return originalSendBeacon.call(navigator, rewrittenUrl, data);
@@ -514,9 +592,12 @@ class SlaxInject {
     }
   }
 
-  overrideDocumentCreateElement(): void {
+  /**
+   * 拦截document.createElement和document.createElementNS方法
+   * 这样可以在元素被创建时就应用拦截器
+   */
+  function overrideDocumentCreateElement(): void {
     const originalCreateElement = document.createElement;
-    const classBin = this;
     document.createElement = function (
       tagName: string,
       options?: ElementCreationOptions | undefined
@@ -525,7 +606,7 @@ class SlaxInject {
 
       // 为新创建的元素应用相应的拦截器
       if (element instanceof HTMLElement) {
-        classBin.applyInterceptorsToNewElement(element);
+        applyInterceptorsToNewElement(element);
       }
 
       return element;
@@ -547,33 +628,32 @@ class SlaxInject {
       );
 
       if (element instanceof HTMLElement) {
-        classBin.applyInterceptorsToNewElement(element);
+        applyInterceptorsToNewElement(element);
       }
 
       return element;
     };
   }
 
-  applyInterceptorsToNewElement(element: HTMLElement): void {
-    // 根据元素类型应用不同的拦截器
+  function applyInterceptorsToNewElement(element: HTMLElement): void {
     if (element instanceof HTMLAnchorElement) {
-      this.interceptElementAttribute(element, "href", "mp_");
+      interceptElementAttribute(element, "href", "mp_");
     } else if (element instanceof HTMLAreaElement) {
-      this.interceptElementAttribute(element, "href", "mp_");
+      interceptElementAttribute(element, "href", "mp_");
     } else if (element instanceof HTMLImageElement) {
-      this.interceptElementAttribute(element, "src", "mp_");
-      this.interceptElementSrcset(element);
+      interceptElementAttribute(element, "src", "mp_");
+      interceptElementSrcset(element);
     } else if (element instanceof HTMLIFrameElement) {
-      this.interceptElementAttribute(element, "src", "mp_");
+      interceptElementAttribute(element, "src", "mp_");
     } else if (element instanceof HTMLVideoElement) {
-      this.interceptElementAttribute(element, "src", "mp_");
+      interceptElementAttribute(element, "src", "mp_");
     } else if (element instanceof HTMLAudioElement) {
-      this.interceptElementAttribute(element, "src", "mp_");
+      interceptElementAttribute(element, "src", "mp_");
     } else if (element instanceof HTMLSourceElement) {
-      this.interceptElementAttribute(element, "src", "mp_");
-      this.interceptElementSrcset(element);
+      interceptElementAttribute(element, "src", "mp_");
+      interceptElementSrcset(element);
     } else if (element instanceof HTMLScriptElement) {
-      this.interceptElementAttribute(element, "src", "js_");
+      interceptElementAttribute(element, "src", "js_");
     } else if (element instanceof HTMLLinkElement) {
       // 对于link元素，需要检查rel属性
       const mod =
@@ -583,68 +663,58 @@ class SlaxInject {
           element.getAttribute("href")!.endsWith(".css"))
           ? "cs_"
           : "mp_";
-      this.interceptElementAttribute(element, "href", mod);
+      interceptElementAttribute(element, "href", mod);
     } else if (element instanceof HTMLFormElement) {
-      this.interceptElementAttribute(element, "action", "mp_");
+      interceptElementAttribute(element, "action", "mp_");
     }
 
-    // 额外处理DocumentFragment
     //@ts-ignore
     if (element.content && element.content instanceof DocumentFragment) {
       //@ts-ignore
       processDocumentFragment(element.content);
     }
 
-    // 处理子元素
     if (element.children && element.children.length > 0) {
       Array.from(element.children).forEach((child) => {
         if (child instanceof HTMLElement) {
-          this.applyInterceptorsToNewElement(child);
+          applyInterceptorsToNewElement(child);
         }
       });
     }
   }
 
-  interceptElementAttribute(
+  function interceptElementAttribute(
     element: HTMLElement,
     attributeName: string,
     mod: string = "mp_"
   ): void {
-    // 获取原始的属性值
     const originalValue = element.getAttribute(attributeName);
 
-    // 如果属性已经存在，立即进行重写
     if (originalValue) {
-      const rewrittenValue = rewriteUrl(
-        originalValue,
-        proxyURL,
-        originURL,
-        mod
-      );
+      const rewrittenValue = rewriteUrl(originalValue, mod);
       element.setAttribute(attributeName, rewrittenValue);
     }
 
-    // 拦截setAttribute方法
     const originalSetAttribute = element.setAttribute;
     element.setAttribute = function (name: string, value: string): void {
       if (name === attributeName) {
-        const rewrittenValue = rewriteUrl(value, proxyURL, originURL, mod);
+        const rewrittenValue = rewriteUrl(value, mod);
         return originalSetAttribute.call(this, name, rewrittenValue);
       }
       return originalSetAttribute.call(this, name, value);
     };
   }
 
-  interceptElementSrcset(element: HTMLImageElement | HTMLSourceElement): void {
-    // 获取原始的srcset值
+  function interceptElementSrcset(
+    element: HTMLImageElement | HTMLSourceElement
+  ): void {
     const originalSrcset = element.srcset;
 
-    // 如果srcset已经存在，立即进行重写
     if (originalSrcset) {
       const parts = originalSrcset.split(",").map((part) => {
         const [url, ...descriptors] = part.trim().split(/\s+/);
         if (url && !url.startsWith("data:")) {
-          const rewrittenUrl = rewriteUrl(url, proxyURL, originURL, "mp_");
+          const rewrittenUrl = rewriteUrl(url, "mp_");
           return [rewrittenUrl, ...descriptors].join(" ");
         }
         return part;
@@ -654,22 +724,28 @@ class SlaxInject {
     }
   }
 
-  processDocumentFragment(fragment: DocumentFragment): void {
+  /**
+   * 处理DocumentFragment及其子元素
+   */
+  function processDocumentFragment(fragment: DocumentFragment): void {
     // 遍历所有子节点
     Array.from(fragment.childNodes).forEach((node) => {
       if (node instanceof HTMLElement) {
-        this.applyInterceptorsToNewElement(node);
+        applyInterceptorsToNewElement(node);
       }
     });
   }
 
-  overrideDocumentWrite(): void {
+  /**
+   * 拦截document.write和document.writeln方法
+   * 这些方法常用于动态注入HTML
+   */
+  function overrideDocumentWrite(): void {
     const originalWrite = document.write;
-    const classBin = this;
     document.write = function (...args: string[]): void {
       // 处理输入的HTML字符串
       if (args.length > 0 && typeof args[0] === "string") {
-        args[0] = classBin.rewriteHTMLContent(args[0]);
+        args[0] = rewriteHTMLContent(args[0]);
       }
       originalWrite.apply(document, args);
     };
@@ -678,16 +754,17 @@ class SlaxInject {
     document.writeln = function (...args: string[]): void {
       // 处理输入的HTML字符串
       if (args.length > 0 && typeof args[0] === "string") {
-        args[0] = classBin.rewriteHTMLContent(args[0]);
+        args[0] = rewriteHTMLContent(args[0]);
       }
       originalWriteln.apply(document, args);
     };
   }
 
-  rewriteHTMLContent(html: string): string {
+  /**
+   * 重写HTML内容中的URL
+   */
+  function rewriteHTMLContent(html: string): string {
     if (!html || typeof html !== "string") return html;
-
-    const classBin = this;
 
     // 创建一个临时的DOM解析器
     const parser = new DOMParser();
@@ -715,10 +792,7 @@ class SlaxInject {
               ) {
                 mod = "cs_";
               }
-              element.setAttribute(
-                attr,
-                rewriteUrl(value, proxyURL, originURL, mod)
-              );
+              element.setAttribute(attr, rewriteUrl(value, mod));
             }
           }
         });
@@ -730,12 +804,7 @@ class SlaxInject {
             const parts = srcset.split(",").map((part) => {
               const [url, ...descriptors] = part.trim().split(/\s+/);
               if (url && !url.startsWith("data:")) {
-                const rewrittenUrl = rewriteUrl(
-                  url,
-                  proxyURL,
-                  originURL,
-                  "mp_"
-                );
+                const rewrittenUrl = rewriteUrl(url, "mp_");
                 return [rewrittenUrl, ...descriptors].join(" ");
               }
               return part;
@@ -748,7 +817,7 @@ class SlaxInject {
         if (element.hasAttribute("style")) {
           const style = element.getAttribute("style");
           if (style && style.includes("url(")) {
-            element.setAttribute("style", classBin.rewriteCssUrls(style));
+            element.setAttribute("style", rewriteCssUrls(style));
           }
         }
       }
@@ -758,9 +827,11 @@ class SlaxInject {
     return doc.documentElement.innerHTML;
   }
 
-  overrideHTMLInsertionAPIs(): void {
+  /**
+   * 拦截innerHTML、outerHTML和insertAdjacentHTML方法
+   */
+  function overrideHTMLInsertionAPIs(): void {
     // 拦截Element.prototype.innerHTML
-    const classBin = this;
     const originalInnerHTMLDescriptor = Object.getOwnPropertyDescriptor(
       Element.prototype,
       "innerHTML"
@@ -771,14 +842,14 @@ class SlaxInject {
           return originalInnerHTMLDescriptor.get!.call(this);
         },
         set: function (html) {
-          const rewrittenHTML = classBin.rewriteHTMLContent(html);
+          const rewrittenHTML = rewriteHTMLContent(html);
           originalInnerHTMLDescriptor.set!.call(this, rewrittenHTML);
 
           // 处理新添加的元素
           if (this instanceof HTMLElement) {
             Array.from(this.querySelectorAll("*")).forEach((element) => {
               if (element instanceof HTMLElement) {
-                classBin.applyInterceptorsToNewElement(element);
+                applyInterceptorsToNewElement(element);
               }
             });
           }
@@ -799,7 +870,7 @@ class SlaxInject {
           return originalOuterHTMLDescriptor.get!.call(this);
         },
         set: function (html) {
-          const rewrittenHTML = classBin.rewriteHTMLContent(html);
+          const rewrittenHTML = rewriteHTMLContent(html);
           originalOuterHTMLDescriptor.set!.call(this, rewrittenHTML);
 
           // 处理新添加的元素
@@ -807,7 +878,7 @@ class SlaxInject {
             Array.from(this.parentElement.querySelectorAll("*")).forEach(
               (element) => {
                 if (element instanceof HTMLElement) {
-                  classBin.applyInterceptorsToNewElement(element);
+                  applyInterceptorsToNewElement(element);
                 }
               }
             );
@@ -821,7 +892,7 @@ class SlaxInject {
     // 拦截insertAdjacentHTML方法
     const originalInsertAdjacentHTML = Element.prototype.insertAdjacentHTML;
     Element.prototype.insertAdjacentHTML = function (position, html) {
-      const rewrittenHTML = classBin.rewriteHTMLContent(html);
+      const rewrittenHTML = rewriteHTMLContent(html);
       originalInsertAdjacentHTML.call(this, position, rewrittenHTML);
 
       // 处理新添加的元素
@@ -838,23 +909,24 @@ class SlaxInject {
 
         elementsToCheck.forEach((element) => {
           if (element instanceof HTMLElement) {
-            classBin.applyInterceptorsToNewElement(element);
+            applyInterceptorsToNewElement(element);
           }
         });
       }
     };
   }
 
-  overrideNodeRelatedAPIs(): void {
-    const classBin = this;
-
+  /**
+   * 拦截Node相关API
+   */
+  function overrideNodeRelatedAPIs(): void {
     // 拦截Node.appendChild
     const originalAppendChild = Node.prototype.appendChild;
     Node.prototype.appendChild = function <T extends Node>(newChild: T): T {
       // 如果是有效的节点对象，直接处理
       if (newChild instanceof Node) {
         if (newChild instanceof HTMLElement) {
-          classBin.applyInterceptorsToNewElement(newChild);
+          applyInterceptorsToNewElement(newChild);
         }
         //@ts-ignore
         return originalAppendChild.call(this, newChild);
@@ -911,7 +983,7 @@ class SlaxInject {
       }
 
       if (newChild instanceof HTMLElement) {
-        classBin.applyInterceptorsToNewElement(newChild);
+        applyInterceptorsToNewElement(newChild);
       }
       //@ts-ignore
       return originalInsertBefore.call(this, newChild, refChild);
@@ -949,7 +1021,7 @@ class SlaxInject {
       }
 
       if (newChild instanceof HTMLElement) {
-        classBin.applyInterceptorsToNewElement(newChild);
+        applyInterceptorsToNewElement(newChild);
       }
       //@ts-ignore
       return originalReplaceChild.call(this, newChild, oldChild);
@@ -962,7 +1034,7 @@ class SlaxInject {
         // 处理参数列表中的每个节点
         const processedNodes = nodes.map((node) => {
           if (node instanceof HTMLElement) {
-            classBin.applyInterceptorsToNewElement(node);
+            applyInterceptorsToNewElement(node);
             return node;
           }
           // 其他类型的节点或字符串保持原样 (字符串会被原生方法自动转换为文本节点)
@@ -980,7 +1052,7 @@ class SlaxInject {
         // 处理参数列表中的每个节点
         const processedNodes = nodes.map((node) => {
           if (node instanceof HTMLElement) {
-            classBin.applyInterceptorsToNewElement(node);
+            applyInterceptorsToNewElement(node);
             return node;
           }
           // 其他类型的节点或字符串保持原样 (字符串会被原生方法自动转换为文本节点)
@@ -1014,7 +1086,7 @@ class SlaxInject {
           mod = "cs_";
         }
 
-        const rewrittenValue = rewriteUrl(value, proxyURL, originURL, mod);
+        const rewrittenValue = rewriteUrl(value, mod);
         return originalSetAttribute.call(this, name, rewrittenValue);
       }
 
@@ -1023,7 +1095,7 @@ class SlaxInject {
         const parts = value.split(",").map((part) => {
           const [url, ...descriptors] = part.trim().split(/\s+/);
           if (url && !url.startsWith("data:")) {
-            const rewrittenUrl = rewriteUrl(url, proxyURL, originURL, "mp_");
+            const rewrittenUrl = rewriteUrl(url, "mp_");
             return [rewrittenUrl, ...descriptors].join(" ");
           }
           return part;
@@ -1038,7 +1110,7 @@ class SlaxInject {
         typeof value === "string" &&
         value.includes("url(")
       ) {
-        const rewrittenStyle = classBin.rewriteCssUrls(value);
+        const rewrittenStyle = rewriteCssUrls(value);
         return originalSetAttribute.call(this, name, rewrittenStyle);
       }
 
@@ -1046,11 +1118,14 @@ class SlaxInject {
     };
   }
 
-  overrideIntersectionObserver(): void {
-    const OriginalIntersectionObserver = self.IntersectionObserver;
+  /**
+   * 拦截IntersectionObserver API
+   */
+  function overrideIntersectionObserver(): void {
+    const OriginalIntersectionObserver = window.IntersectionObserver;
 
     // 使用构造函数模式正确重写
-    self.IntersectionObserver = function (
+    window.IntersectionObserver = function (
       this: IntersectionObserver,
       callback: IntersectionObserverCallback,
       options?: IntersectionObserverInit
@@ -1076,19 +1151,33 @@ class SlaxInject {
     } as unknown as typeof IntersectionObserver;
   }
 
-  initElementInterceptors(): void {
+  // ==========================================
+  // 拦截器初始化
+  // ==========================================
+
+  function initDOMInterceptors(): void {
+    overrideDocumentCreateElement();
+    overrideDocumentWrite();
+    overrideHTMLInsertionAPIs();
+    overrideNodeRelatedAPIs();
+  }
+
+  /**
+   * 初始化所有元素属性拦截器
+   */
+  function initElementInterceptors(): void {
     // 拦截元素属性访问器
-    this.createPropertyInterceptor(HTMLAnchorElement.prototype, "href");
-    this.createPropertyInterceptor(HTMLAreaElement.prototype, "href");
-    this.createPropertyInterceptor(HTMLImageElement.prototype, "src");
-    this.createPropertyInterceptor(HTMLIFrameElement.prototype, "src");
-    this.createPropertyInterceptor(HTMLVideoElement.prototype, "src");
-    this.createPropertyInterceptor(HTMLAudioElement.prototype, "src");
-    this.createPropertyInterceptor(HTMLSourceElement.prototype, "src");
-    this.createPropertyInterceptor(HTMLScriptElement.prototype, "src");
+    createPropertyInterceptor(HTMLAnchorElement.prototype, "href");
+    createPropertyInterceptor(HTMLAreaElement.prototype, "href");
+    createPropertyInterceptor(HTMLImageElement.prototype, "src");
+    createPropertyInterceptor(HTMLIFrameElement.prototype, "src");
+    createPropertyInterceptor(HTMLVideoElement.prototype, "src");
+    createPropertyInterceptor(HTMLAudioElement.prototype, "src");
+    createPropertyInterceptor(HTMLSourceElement.prototype, "src");
+    createPropertyInterceptor(HTMLScriptElement.prototype, "src");
 
     // 为<link>元素创建特殊的href拦截器
-    this.createPropertyInterceptor(
+    createPropertyInterceptor(
       HTMLLinkElement.prototype,
       "href",
       "mp_",
@@ -1105,87 +1194,39 @@ class SlaxInject {
     );
 
     // 为srcset属性创建拦截器
-    this.createSrcsetInterceptor(HTMLImageElement.prototype);
-    this.createSrcsetInterceptor(HTMLSourceElement.prototype);
+    createSrcsetInterceptor(HTMLImageElement.prototype);
+    createSrcsetInterceptor(HTMLSourceElement.prototype);
 
     // 拦截表单action属性
-    this.createPropertyInterceptor(HTMLFormElement.prototype, "action");
+    createPropertyInterceptor(HTMLFormElement.prototype, "action");
   }
 
-  initHistoryOverrides(): void {
-    if (self !== self.top) return;
+  /**
+   * 初始化所有拦截器
+   */
+  function initAllInterceptors(): void {
+    //@ts-ignore
+    window._slaxLocation = new SlaxLocation(window.location);
+    //@ts-ignore
+    window.slaxEnv = new SlaxEnv(window);
 
-    const origPushState = self.history.pushState;
-    const origReplaceState = self.history.replaceState;
+    initElementInterceptors();
 
-    self.history.pushState = function (
-      state: any,
-      title: string,
-      url?: string | URL | null
-    ): void {
-      console.log(`[History Interceptor] pushState: ${url}`);
+    overrideStyleProperties();
 
-      if (url) {
-        if (typeof url === "string" && !url.includes(proxyURL)) {
-          url = rewriteUrl(url, proxyURL, originURL);
-        }
-      }
+    overrideFetch();
+    overrideXHR();
 
-      origPushState.call(this, state, title, url);
+    overrideWorkers();
 
-      const popStateEvent = new PopStateEvent("popstate", { state: state });
-      self.dispatchEvent(popStateEvent);
-    };
+    disableNotifications();
+    disableGeolocation();
+    overrideBeacon();
 
-    self.history.replaceState = function (
-      state: any,
-      title: string,
-      url?: string | URL | null
-    ): void {
-      if (url) {
-        if (typeof url === "string" && !url.includes(proxyURL)) {
-          url = rewriteUrl(url, proxyURL, originURL);
-        }
-      }
+    overrideIntersectionObserver();
 
-      origReplaceState.call(this, state, title, url);
-
-      const popStateEvent = new PopStateEvent("popstate", { state: state });
-      self.dispatchEvent(popStateEvent);
-    };
-
-    self.addEventListener("popstate", function (event) {
-      console.log(
-        `[History Interceptor] popstate event: ${self.location.href}`
-      );
-    });
-
-    console.log("[History Interceptor] History API overrides initialized");
+    initDOMInterceptors();
   }
 
-  public initAllInterceptors(): void {
-    this.initElementInterceptors();
-
-    this.overrideStyleProperties();
-
-    this.overrideFetch();
-    this.overrideXHR();
-
-    this.overrideWorkers();
-
-    this.disableNotifications();
-    this.disableGeolocation();
-    this.overrideBeacon();
-
-    this.overrideIntersectionObserver();
-
-    this.overrideDocumentCreateElement();
-    this.overrideDocumentWrite();
-    this.overrideHTMLInsertionAPIs();
-    this.overrideNodeRelatedAPIs();
-
-    this.initHistoryOverrides();
-  }
-}
-
-const slaxInject = new SlaxInject(window);
+  initAllInterceptors();
+})();

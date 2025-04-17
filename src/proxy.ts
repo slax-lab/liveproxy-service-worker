@@ -32,12 +32,42 @@ export function processResponseHeaders(headers: Headers): Headers {
   return newHeaders;
 }
 
+function handleESModule(): string {
+  return `var _____SLAX_function_____ = function(name) {
+    try {
+      if (self._SLAX_obj_proxy && self._SLAX_obj_proxy[name]) {
+        return self._SLAX_obj_proxy[name];
+      }
+      return self[name];
+    } catch (e) {
+      console.error("Error in SLAX assign function", e);
+      return self[name];
+    }
+  };
+
+  const window = _____SLAX_function_____("window");
+  const self = _____SLAX_function_____("self");
+  const document = _____SLAX_function_____("document");
+  const location = _____SLAX_function_____("location");
+
+  export { window, self, document, location };`;
+}
+
 export async function handleProxyRequest(
   request: Request,
   timestamp: string,
   mod: string,
   origUrl: string
 ): Promise<Response> {
+  if (origUrl === "_slax_es_import.js") {
+    return new Response(handleESModule(), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/javascript",
+      },
+    });
+  }
+
   const proxyUrl = proxyPrefix + origUrl;
 
   const headers = new Headers();

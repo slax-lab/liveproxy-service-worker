@@ -18,10 +18,18 @@ const globalOverrides = [
 const GLOBALS_CONCAT_STR = globalOverrides
   .map((x) => `(?:^|[^$.])\\b${x}\\b(?:$|[^$])`)
   .join("|");
+
 const GLOBALS_RX = new RegExp(`(${GLOBALS_CONCAT_STR})`);
 
 function wrapJavaScript(code: string): string {
-  if (code.includes("import")) return code;
+  const ESM_IMPORT_REGEX =
+    /import\s*(?:(?:(?:[\w*]\s*,\s*)?\{(?:[^{}]*)\}|(?:[\w*](?:\s+as\s+[\w*])?)|\*\s+as\s+[\w*])\s*(?:from\s*)?)?(?:["']([^"']+)["'])?(?:;|\s|$)/g;
+
+  const ESM_EXPORT_REGEX = /export(\{|\s).*/g;
+
+  if (ESM_IMPORT_REGEX.test(code) || ESM_EXPORT_REGEX.test(code)) {
+    return `import { window, self, document, location } from './_slax_es_import.js';\n${code}`;
+  }
 
   let ast: acorn.Node;
   try {
@@ -254,11 +262,7 @@ export function rewriteJS(
     }
   );
 
-  if (!isModule) {
-    js = wrapJavaScript(js);
-  }
-
-  return js;
+  return wrapJavaScript(js);
 }
 
 export function rewriteCSS(css: string, baseUrl: string, timestamp: string) {

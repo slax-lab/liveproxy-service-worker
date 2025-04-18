@@ -100,6 +100,8 @@ export class SlaxEnv {
       },
     });
 
+    //@ts-ignore
+    this.window._SLAX_obj_proxy.document = documentProxy;
     this.objProxies.set(this.window.document, documentProxy);
   }
 
@@ -247,6 +249,22 @@ export class SlaxEnv {
       typeof func === "function" &&
       /\[native code\]/.test(Function.prototype.toString.call(func))
     );
+  }
+
+  public proxyToObj(obj: any): any {
+    if (!obj) {
+      return obj;
+    }
+
+    if (obj._SLAX_obj_proxy) {
+      for (const [origObj, proxyObj] of this.objProxies.entries()) {
+        if (proxyObj === obj) {
+          return origObj;
+        }
+      }
+    }
+
+    return obj;
   }
 
   public get_override(name: string): any {

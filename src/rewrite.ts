@@ -16,12 +16,12 @@ function warpESMCode(code: string): string {
   )} } from './_slax_es_import.js';\n${code}`;
 }
 
-function warpJSCode(code: string, isModule: boolean): string {
+function warpJSCode(code: string): string {
   let ast: acorn.Node;
   try {
     ast = acorn.parse(code, { ecmaVersion: "latest" });
   } catch (e) {
-    console.warn("AST parsing failed:", e);
+    console.warn("AST parsing failed:", e, code);
     return code;
   }
 
@@ -106,7 +106,7 @@ function wrapJavaScript(code: string, isModule: boolean): string {
     return warpESMCode(code);
   }
 
-  return warpJSCode(code, isModule);
+  return warpJSCode(code);
 }
 
 export function rewriteJS(
@@ -411,7 +411,11 @@ export function completeHtmlRewrite(
       if (!attrs) {
         return `<script>${wrapJavaScript(content, false)}</script>`;
       }
-      if (attrs.includes("application/ld+json")) return match;
+      if (
+        attrs.includes("application/ld+json") ||
+        attrs.includes("application/json")
+      )
+        return match;
 
       if (attrs.includes(" src=")) {
         const processedAttrs = attrs.replace(

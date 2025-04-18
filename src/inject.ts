@@ -42,21 +42,14 @@ const proxyURL = "${proxyURL}";
     }
   }
 
-  /**
-   * 从代理URL中提取原始URL
-   * @param url 代理URL
-   * @returns 原始URL
-   */
   function extractOriginalUrl(url: string | null): string | null {
     if (!url || typeof url !== "string") return url;
 
-    // 先检查新格式的URL： /w/liveproxy/[mod]_/
     const newProxyMatch = url.match(/\/w\/liveproxy\/[^\/]*([a-z_]+)\/(.+)/);
     if (newProxyMatch) {
       return newProxyMatch[2];
     }
 
-    // 兼容旧格式的URL： /proxy/[mod]_/
     const oldProxyMatch = url.match(/\/proxy\/[^\/]*([a-z_]+)\/(.+)/);
     if (oldProxyMatch) {
       return oldProxyMatch[2];
@@ -65,16 +58,6 @@ const proxyURL = "${proxyURL}";
     return url;
   }
 
-  // ==========================================
-  // 通用属性拦截器工厂函数
-  // ==========================================
-
-  /**
-   * 创建通用的属性拦截器
-   * @param prototype 目标原型
-   * @param propName 属性名称
-   * @param mod 代理模式前缀
-   */
   function createPropertyInterceptor(
     prototype: any,
     propName: string,
@@ -108,10 +91,6 @@ const proxyURL = "${proxyURL}";
     });
   }
 
-  /**
-   * 创建srcset属性拦截器
-   * @param prototype 目标原型
-   */
   function createSrcsetInterceptor(prototype: any): void {
     const srcsetPropName = "_originalSrcset";
 
@@ -120,7 +99,6 @@ const proxyURL = "${proxyURL}";
         return (this as any)[srcsetPropName] || "";
       },
       set: function (this: HTMLElement, value: string): void {
-        // 保存原始值
         (this as any)[srcsetPropName] = value;
 
         if (!value) {
@@ -128,7 +106,6 @@ const proxyURL = "${proxyURL}";
           return;
         }
 
-        // 重写srcset格式
         const parts = value.split(",").map((part) => {
           const [url, ...descriptors] = part.trim().split(/\s+/);
           if (url && !url.startsWith("data:")) {
@@ -145,15 +122,6 @@ const proxyURL = "${proxyURL}";
     });
   }
 
-  // ==========================================
-  // CSS 属性拦截
-  // ==========================================
-
-  /**
-   * 重写CSS URL函数
-   * @param value CSS值
-   * @returns 重写后的CSS值
-   */
   function rewriteCssUrls(value: string): string {
     if (!value || typeof value !== "string" || !value.includes("url(")) {
       return value;
@@ -171,13 +139,9 @@ const proxyURL = "${proxyURL}";
     );
   }
 
-  /**
-   * 拦截CSS样式属性
-   */
   function overrideStyleProperties(): void {
     const originalSetProperty = CSSStyleDeclaration.prototype.setProperty;
 
-    // 需要重写的CSS属性
     const cssPropertiesToRewrite: string[] = [
       "background-image",
       "background",
@@ -189,7 +153,6 @@ const proxyURL = "${proxyURL}";
       "mask-image",
     ];
 
-    // 重写setProperty方法
     CSSStyleDeclaration.prototype.setProperty = function (
       propertyName: string,
       value: string,
@@ -207,15 +170,12 @@ const proxyURL = "${proxyURL}";
       return originalSetProperty.call(this, propertyName, value, priority);
     };
 
-    // 为特定CSS属性创建访问器
     cssPropertiesToRewrite.forEach((propName) => {
-      // 转换为驼峰命名
       const camelCaseProp = propName.replace(
         /-([a-z])/g,
         (_, letter: string): string => letter.toUpperCase()
       );
 
-      // 避免重复定义
       const originalDescriptor = Object.getOwnPropertyDescriptor(
         CSSStyleDeclaration.prototype,
         camelCaseProp
@@ -239,13 +199,6 @@ const proxyURL = "${proxyURL}";
     });
   }
 
-  // ==========================================
-  // 网络请求拦截
-  // ==========================================
-
-  /**
-   * 拦截Fetch API
-   */
   function overrideFetch(): void {
     const originalFetch = window.fetch;
 
@@ -258,12 +211,10 @@ const proxyURL = "${proxyURL}";
 
         if (typeof input === "string") {
           try {
-            // 检查URL是否为有效值
             if (!input) {
               return originalFetch.call(this, input, init);
             }
 
-            // 特殊URL协议不需要重写
             const specialProtocols = [
               "javascript:",
               "data:",
@@ -310,7 +261,7 @@ const proxyURL = "${proxyURL}";
               "[Fetch Interceptor] Error rewriting Request URL:",
               error
             );
-            rewrittenInput = input; // 出错时使用原始请求
+            rewrittenInput = input;
           }
         }
 
@@ -325,9 +276,6 @@ const proxyURL = "${proxyURL}";
     };
   }
 
-  /**
-   * 拦截XMLHttpRequest
-   */
   function overrideXHR(): void {
     const originalOpen = XMLHttpRequest.prototype.open;
 
@@ -339,7 +287,6 @@ const proxyURL = "${proxyURL}";
       password?: string
     ): void {
       try {
-        // 检查URL是否为有效值
         if (!url || typeof url !== "string") {
           console.warn("[XHR Interceptor] Invalid URL:", url);
           return originalOpen.call(
@@ -352,7 +299,6 @@ const proxyURL = "${proxyURL}";
           );
         }
 
-        // 特殊URL协议不需要重写
         const specialProtocols = [
           "javascript:",
           "data:",
@@ -395,13 +341,6 @@ const proxyURL = "${proxyURL}";
     };
   }
 
-  // ==========================================
-  // Worker API 拦截
-  // ==========================================
-
-  /**
-   * 拦截Worker相关API
-   */
   function overrideWorkers(): void {
     // Web Worker拦截
     const originalWorker = window.Worker;
@@ -423,7 +362,6 @@ const proxyURL = "${proxyURL}";
       return new originalWorker(interceptedUrl, options);
     } as typeof Worker;
 
-    // Shared Worker拦截
     if (typeof SharedWorker !== "undefined") {
       const originalSharedWorker = window.SharedWorker;
       //@ts-ignore
@@ -447,7 +385,6 @@ const proxyURL = "${proxyURL}";
       } as typeof SharedWorker;
     }
 
-    // ServiceWorker注册拦截
     if (navigator.serviceWorker) {
       const originalRegister = navigator.serviceWorker.register;
       navigator.serviceWorker.register = function (
@@ -457,7 +394,6 @@ const proxyURL = "${proxyURL}";
         console.log(
           `[Worker Interceptor] Registering Service Worker: ${scriptURL}`
         );
-        // 阻止ServiceWorker注册
         console.warn("[Worker Interceptor] ServiceWorker registration blocked");
         return Promise.reject(
           new Error("ServiceWorker registration is disabled")
@@ -466,21 +402,12 @@ const proxyURL = "${proxyURL}";
     }
   }
 
-  // ==========================================
-  // 敏感API拦截
-  // ==========================================
-
-  /**
-   * 禁用通知API
-   */
   function disableNotifications(): void {
     if (window.Notification) {
-      // 模拟通知接口
       interface MockNotification {
         close: () => void;
       }
 
-      // 重写Notification
       window.Notification = function (
         title: string,
         options?: NotificationOptions
@@ -495,14 +422,13 @@ const proxyURL = "${proxyURL}";
         };
       } as unknown as typeof Notification;
 
-      // 重写静态属性和方法
       Object.defineProperties(window.Notification, {
         permission: {
           get: function (): NotificationPermission {
             console.log(
               "[Notification Interceptor] Getting Notification.permission"
             );
-            return "denied"; // 始终返回denied
+            return "denied";
           },
         },
         requestPermission: {
@@ -518,9 +444,6 @@ const proxyURL = "${proxyURL}";
     }
   }
 
-  /**
-   * 禁用地理位置API
-   */
   function disableGeolocation(): void {
     if (navigator.geolocation) {
       interface PositionError {
@@ -561,15 +484,11 @@ const proxyURL = "${proxyURL}";
         },
       };
 
-      // 替换geolocation对象
       //@ts-ignore
       navigator.geolocation = mockGeolocation;
     }
   }
 
-  /**
-   * 重写Beacon API
-   */
   function overrideBeacon(): void {
     if (navigator.sendBeacon) {
       const originalSendBeacon = navigator.sendBeacon;
@@ -592,10 +511,6 @@ const proxyURL = "${proxyURL}";
     }
   }
 
-  /**
-   * 拦截document.createElement和document.createElementNS方法
-   * 这样可以在元素被创建时就应用拦截器
-   */
   function overrideDocumentCreateElement(): void {
     const originalCreateElement = document.createElement;
     document.createElement = function (
@@ -604,7 +519,6 @@ const proxyURL = "${proxyURL}";
     ): HTMLElement {
       const element = originalCreateElement.call(document, tagName, options);
 
-      // 为新创建的元素应用相应的拦截器
       if (element instanceof HTMLElement) {
         applyInterceptorsToNewElement(element);
       }
@@ -612,7 +526,6 @@ const proxyURL = "${proxyURL}";
       return element;
     };
 
-    // 同样需要拦截createElementNS方法
     const originalCreateElementNS = document.createElementNS;
     //@ts-ignore
     document.createElementNS = function (
@@ -723,11 +636,7 @@ const proxyURL = "${proxyURL}";
     }
   }
 
-  /**
-   * 处理DocumentFragment及其子元素
-   */
   function processDocumentFragment(fragment: DocumentFragment): void {
-    // 遍历所有子节点
     Array.from(fragment.childNodes).forEach((node) => {
       if (node instanceof HTMLElement) {
         applyInterceptorsToNewElement(node);
@@ -735,14 +644,9 @@ const proxyURL = "${proxyURL}";
     });
   }
 
-  /**
-   * 拦截document.write和document.writeln方法
-   * 这些方法常用于动态注入HTML
-   */
   function overrideDocumentWrite(): void {
     const originalWrite = document.write;
     document.write = function (...args: string[]): void {
-      // 处理输入的HTML字符串
       if (args.length > 0 && typeof args[0] === "string") {
         args[0] = rewriteHTMLContent(args[0]);
       }
@@ -751,7 +655,6 @@ const proxyURL = "${proxyURL}";
 
     const originalWriteln = document.writeln;
     document.writeln = function (...args: string[]): void {
-      // 处理输入的HTML字符串
       if (args.length > 0 && typeof args[0] === "string") {
         args[0] = rewriteHTMLContent(args[0]);
       }
@@ -759,28 +662,21 @@ const proxyURL = "${proxyURL}";
     };
   }
 
-  /**
-   * 重写HTML内容中的URL
-   */
   function rewriteHTMLContent(html: string): string {
     if (!html || typeof html !== "string") return html;
 
-    // 创建一个临时的DOM解析器
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, "text/html");
 
-    // 处理所有元素
     const elements = doc.querySelectorAll("*");
     elements.forEach((element) => {
       if (element instanceof HTMLElement) {
-        // 处理常见的URL属性
         const urlAttributes = ["src", "href", "action", "data-src"];
         urlAttributes.forEach((attr) => {
           if (element.hasAttribute(attr)) {
             const value = element.getAttribute(attr);
             if (value) {
               let mod = "mp_";
-              // 对于不同类型的元素使用不同的模式
               if (element instanceof HTMLScriptElement) {
                 mod = "js_";
               } else if (
@@ -796,7 +692,6 @@ const proxyURL = "${proxyURL}";
           }
         });
 
-        // 处理srcset属性
         if (element.hasAttribute("srcset")) {
           const srcset = element.getAttribute("srcset");
           if (srcset) {
@@ -812,7 +707,6 @@ const proxyURL = "${proxyURL}";
           }
         }
 
-        // 处理inline样式中的URL
         if (element.hasAttribute("style")) {
           const style = element.getAttribute("style");
           if (style && style.includes("url(")) {
@@ -822,15 +716,10 @@ const proxyURL = "${proxyURL}";
       }
     });
 
-    // 将处理后的HTML转换回字符串
     return doc.documentElement.innerHTML;
   }
 
-  /**
-   * 拦截innerHTML、outerHTML和insertAdjacentHTML方法
-   */
   function overrideHTMLInsertionAPIs(): void {
-    // 拦截Element.prototype.innerHTML
     const originalInnerHTMLDescriptor = Object.getOwnPropertyDescriptor(
       Element.prototype,
       "innerHTML"
@@ -844,7 +733,6 @@ const proxyURL = "${proxyURL}";
           const rewrittenHTML = rewriteHTMLContent(html);
           originalInnerHTMLDescriptor.set!.call(this, rewrittenHTML);
 
-          // 处理新添加的元素
           if (this instanceof HTMLElement) {
             Array.from(this.querySelectorAll("*")).forEach((element) => {
               if (element instanceof HTMLElement) {
@@ -858,7 +746,6 @@ const proxyURL = "${proxyURL}";
       });
     }
 
-    // 拦截Element.prototype.outerHTML
     const originalOuterHTMLDescriptor = Object.getOwnPropertyDescriptor(
       Element.prototype,
       "outerHTML"
@@ -872,7 +759,6 @@ const proxyURL = "${proxyURL}";
           const rewrittenHTML = rewriteHTMLContent(html);
           originalOuterHTMLDescriptor.set!.call(this, rewrittenHTML);
 
-          // 处理新添加的元素
           if (this.parentElement) {
             Array.from(this.parentElement.querySelectorAll("*")).forEach(
               (element) => {
@@ -888,17 +774,14 @@ const proxyURL = "${proxyURL}";
       });
     }
 
-    // 拦截insertAdjacentHTML方法
     const originalInsertAdjacentHTML = Element.prototype.insertAdjacentHTML;
     Element.prototype.insertAdjacentHTML = function (position, html) {
       const rewrittenHTML = rewriteHTMLContent(html);
       originalInsertAdjacentHTML.call(this, position, rewrittenHTML);
 
-      // 处理新添加的元素
       if (this instanceof HTMLElement) {
         const elementsToCheck = Array.from(this.querySelectorAll("*"));
         if (position === "beforebegin" || position === "afterend") {
-          // 如果在元素外部插入，需要检查父元素的子元素
           if (this.parentElement) {
             elementsToCheck.push(
               ...Array.from(this.parentElement.querySelectorAll("*"))
@@ -915,14 +798,9 @@ const proxyURL = "${proxyURL}";
     };
   }
 
-  /**
-   * 拦截Node相关API
-   */
   function overrideNodeRelatedAPIs(): void {
-    // 拦截Node.appendChild
     const originalAppendChild = Node.prototype.appendChild;
     Node.prototype.appendChild = function <T extends Node>(newChild: T): T {
-      // 如果是有效的节点对象，直接处理
       if (newChild instanceof Node) {
         if (newChild instanceof HTMLElement) {
           applyInterceptorsToNewElement(newChild);
@@ -931,7 +809,6 @@ const proxyURL = "${proxyURL}";
         return originalAppendChild.call(this, newChild);
       }
 
-      // 如果是字符串，创建文本节点
       if (typeof newChild === "string") {
         console.warn(
           "[Node Interceptor] String passed to appendChild, converting to TextNode"
@@ -940,24 +817,20 @@ const proxyURL = "${proxyURL}";
         return originalAppendChild.call(this, textNode) as unknown as T;
       }
 
-      // 其他情况，尝试使用原始方法
       try {
         //@ts-ignore
         return originalAppendChild.call(this, newChild);
       } catch (e) {
         console.warn("[Node Interceptor] Error in appendChild:", e);
-        // 如果失败，返回this以避免完全中断
         return this as unknown as T;
       }
     };
 
-    // 拦截Node.insertBefore
     const originalInsertBefore = Node.prototype.insertBefore;
     Node.prototype.insertBefore = function <T extends Node>(
       newChild: T,
       refChild: Node | null
     ): T {
-      // 处理传入的可能是字符串而不是Node的情况
       if (typeof newChild === "string") {
         console.warn(
           "[Node Interceptor] String passed to insertBefore, converting to TextNode"
@@ -970,7 +843,6 @@ const proxyURL = "${proxyURL}";
         ) as unknown as T;
       }
 
-      // 确保newChild是一个有效的Node对象
       if (!(newChild instanceof Node)) {
         console.warn(
           "[Node Interceptor] Invalid parameter passed to insertBefore:",
@@ -988,14 +860,12 @@ const proxyURL = "${proxyURL}";
       return originalInsertBefore.call(this, newChild, refChild);
     };
 
-    // 拦截Node.replaceChild
     const originalReplaceChild = Node.prototype.replaceChild;
     //@ts-ignore
     Node.prototype.replaceChild = function <T extends Node>(
       newChild: T,
       oldChild: Node
     ): T {
-      // 处理传入的可能是字符串而不是Node的情况
       if (typeof newChild === "string") {
         console.warn(
           "[Node Interceptor] String passed to replaceChild, converting to TextNode"
@@ -1008,7 +878,6 @@ const proxyURL = "${proxyURL}";
         ) as unknown as T;
       }
 
-      // 确保newChild是一个有效的Node对象
       if (!(newChild instanceof Node)) {
         console.warn(
           "[Node Interceptor] Invalid parameter passed to replaceChild:",
@@ -1026,17 +895,14 @@ const proxyURL = "${proxyURL}";
       return originalReplaceChild.call(this, newChild, oldChild);
     };
 
-    // 拦截Element.append
     if (Element.prototype.append) {
       const originalAppend = Element.prototype.append;
       Element.prototype.append = function (...nodes: (Node | string)[]) {
-        // 处理参数列表中的每个节点
         const processedNodes = nodes.map((node) => {
           if (node instanceof HTMLElement) {
             applyInterceptorsToNewElement(node);
             return node;
           }
-          // 其他类型的节点或字符串保持原样 (字符串会被原生方法自动转换为文本节点)
           return node;
         });
 
@@ -1044,17 +910,14 @@ const proxyURL = "${proxyURL}";
       };
     }
 
-    // 拦截Element.prepend
     if (Element.prototype.prepend) {
       const originalPrepend = Element.prototype.prepend;
       Element.prototype.prepend = function (...nodes: (Node | string)[]) {
-        // 处理参数列表中的每个节点
         const processedNodes = nodes.map((node) => {
           if (node instanceof HTMLElement) {
             applyInterceptorsToNewElement(node);
             return node;
           }
-          // 其他类型的节点或字符串保持原样 (字符串会被原生方法自动转换为文本节点)
           return node;
         });
 
@@ -1062,7 +925,6 @@ const proxyURL = "${proxyURL}";
       };
     }
 
-    // 拦截setAttribute方法
     const originalSetAttribute = Element.prototype.setAttribute;
     Element.prototype.setAttribute = function (
       name: string,
@@ -1072,7 +934,6 @@ const proxyURL = "${proxyURL}";
       if (urlAttributes.includes(name) && typeof value === "string") {
         let mod = "mp_";
 
-        // 根据元素类型和属性选择合适的模式
         if (this instanceof HTMLScriptElement && name === "src") {
           mod = "js_";
         } else if (
@@ -1089,7 +950,6 @@ const proxyURL = "${proxyURL}";
         return originalSetAttribute.call(this, name, rewrittenValue);
       }
 
-      // 特殊处理srcset属性
       if (name === "srcset" && typeof value === "string") {
         const parts = value.split(",").map((part) => {
           const [url, ...descriptors] = part.trim().split(/\s+/);
@@ -1103,7 +963,6 @@ const proxyURL = "${proxyURL}";
         return originalSetAttribute.call(this, name, parts.join(", "));
       }
 
-      // 特殊处理style属性
       if (
         name === "style" &&
         typeof value === "string" &&
@@ -1161,11 +1020,7 @@ const proxyURL = "${proxyURL}";
     overrideNodeRelatedAPIs();
   }
 
-  /**
-   * 初始化所有元素属性拦截器
-   */
   function initElementInterceptors(): void {
-    // 拦截元素属性访问器
     createPropertyInterceptor(HTMLAnchorElement.prototype, "href");
     createPropertyInterceptor(HTMLAreaElement.prototype, "href");
     createPropertyInterceptor(HTMLImageElement.prototype, "src");
@@ -1175,7 +1030,6 @@ const proxyURL = "${proxyURL}";
     createPropertyInterceptor(HTMLSourceElement.prototype, "src");
     createPropertyInterceptor(HTMLScriptElement.prototype, "src");
 
-    // 为<link>元素创建特殊的href拦截器
     createPropertyInterceptor(
       HTMLLinkElement.prototype,
       "href",
@@ -1192,17 +1046,12 @@ const proxyURL = "${proxyURL}";
       }
     );
 
-    // 为srcset属性创建拦截器
     createSrcsetInterceptor(HTMLImageElement.prototype);
     createSrcsetInterceptor(HTMLSourceElement.prototype);
 
-    // 拦截表单action属性
     createPropertyInterceptor(HTMLFormElement.prototype, "action");
   }
 
-  /**
-   * 初始化所有拦截器
-   */
   function initAllInterceptors(): void {
     //@ts-ignore
     window._slaxLocation = new SlaxLocation(window.location);
@@ -1221,8 +1070,6 @@ const proxyURL = "${proxyURL}";
     disableNotifications();
     disableGeolocation();
     overrideBeacon();
-
-    overrideIntersectionObserver();
 
     initDOMInterceptors();
   }

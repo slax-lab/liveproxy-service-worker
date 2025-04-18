@@ -170,22 +170,83 @@ export class SlaxEnv {
       return this.overrides.get(propStr);
     }
 
-    const value = Reflect.get(obj, prop);
+    if (propStr === "constructor") {
+      return obj.constructor;
+    }
 
-    if (typeof value === "function" && ownProps.indexOf(propStr) !== -1) {
-      if (!funCache[propStr]) {
-        funCache[propStr] = this.wrapFunction(obj, value);
+    const value = Reflect.get(obj, prop);
+    const type = typeof value;
+
+    if (type === "function") {
+      if (
+        propStr === "requestAnimationFrame" ||
+        propStr === "cancelAnimationFrame"
+      ) {
+        if (!this.isNativeFunction(value)) {
+          return value;
+        }
       }
-      return funCache[propStr];
+
+      if (ownProps.indexOf(propStr) !== -1) {
+        const cachedFn = funCache[propStr];
+        if (!cachedFn || cachedFn.original !== value) {
+          const boundFn = value.bind(obj);
+
+          const skipProps = ["arguments", "caller", "length"];
+          for (const ownProp of Object.getOwnPropertyNames(value)) {
+            if (!skipProps.includes(ownProp)) {
+              try {
+                boundFn[ownProp] = value[ownProp];
+              } catch (e) {}
+            }
+          }
+
+          funCache[propStr] = {
+            original: value,
+            boundFn,
+          };
+
+          return boundFn;
+        }
+        return cachedFn.boundFn;
+      }
+    }
+
+    if (type === "object" && value && value._SLAX_obj_proxy) {
+      return value._SLAX_obj_proxy;
+    }
+
+    if (
+      (type === "function" && /^HTML.*Element$/.test(propStr)) ||
+      propStr === "MutationObserver" ||
+      propStr === "IntersectionObserver"
+    ) {
+      return this.wrapDOMConstructor(value);
     }
 
     return value;
   }
 
-  private wrapFunction(thisObj: any, origFn: Function): Function {
-    return function (this: any, ...args: any[]): any {
-      return origFn.apply(thisObj, args);
-    };
+  private wrapDOMConstructor(origCtor: Function): Function {
+    const proxyThis = this;
+
+    function wrappedConstructor(this: any, ...args: any[]): any {
+      if (!(this instanceof wrappedConstructor)) {
+        return new (origCtor as any)(...args);
+      }
+      return new (origCtor as any)(...args);
+    }
+
+    wrappedConstructor.prototype = origCtor.prototype;
+
+    return wrappedConstructor;
+  }
+
+  private isNativeFunction(func: Function): boolean {
+    return (
+      typeof func === "function" &&
+      /\[native code\]/.test(Function.prototype.toString.call(func))
+    );
   }
 
   public get_override(name: string): any {

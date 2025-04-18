@@ -1,7 +1,7 @@
 import { parseUrl } from "./url";
 import { SlaxLocation } from "./inject/location";
 import { SlaxEnv } from "./inject/proxy";
-
+import { extractOriginalUrl } from "./inject/utils";
 const originURL = "${originURL}";
 const proxyURL = "${proxyURL}";
 
@@ -9,7 +9,7 @@ const proxyURL = "${proxyURL}";
   if ((window as any).__URL_REWRITER_INITIALIZED__) return;
   (window as any).__URL_REWRITER_INITIALIZED__ = true;
 
-  function rewriteUrl(url: string, mod: string = "mp_"): string {
+  function rewriteUrl(url: string, mod: string): string {
     if (!url || typeof url !== "string") return url;
 
     try {
@@ -42,26 +42,10 @@ const proxyURL = "${proxyURL}";
     }
   }
 
-  function extractOriginalUrl(url: string | null): string | null {
-    if (!url || typeof url !== "string") return url;
-
-    const newProxyMatch = url.match(/\/w\/liveproxy\/[^\/]*([a-z_]+)\/(.+)/);
-    if (newProxyMatch) {
-      return newProxyMatch[2];
-    }
-
-    const oldProxyMatch = url.match(/\/proxy\/[^\/]*([a-z_]+)\/(.+)/);
-    if (oldProxyMatch) {
-      return oldProxyMatch[2];
-    }
-
-    return url;
-  }
-
   function createPropertyInterceptor(
     prototype: any,
     propName: string,
-    mod: string = "mp_",
+    mod: string,
     checkFn?: (el: HTMLElement) => string
   ): void {
     const originalDescriptor = Object.getOwnPropertyDescriptor(
@@ -133,7 +117,7 @@ const proxyURL = "${proxyURL}";
         if (url.startsWith("data:") || url.startsWith("#")) {
           return match;
         }
-        const rewrittenUrl = rewriteUrl(url, "mp_");
+        const rewrittenUrl = rewriteUrl(url, "im_");
         return `url(${quote}${rewrittenUrl}${quote})`;
       }
     );
@@ -201,6 +185,7 @@ const proxyURL = "${proxyURL}";
 
   function overrideFetch(): void {
     const originalFetch = window.fetch;
+    const specialProtocols = ["javascript:", "data:", "#", "blob:", "about:"];
 
     window.fetch = function (
       input: RequestInfo | URL,
@@ -209,40 +194,31 @@ const proxyURL = "${proxyURL}";
       try {
         let rewrittenInput = input;
 
+        // 如果输入为空，直接使用原始fetch
+        if (!input) {
+          return originalFetch.call(this, input, init);
+        }
+
+        // 处理字符串URL
         if (typeof input === "string") {
+          // 检查特殊协议
+          if (specialProtocols.some((protocol) => input.startsWith(protocol))) {
+            return originalFetch.call(this, input, init);
+          }
+
           try {
-            if (!input) {
-              return originalFetch.call(this, input, init);
-            }
-
-            const specialProtocols = [
-              "javascript:",
-              "data:",
-              "#",
-              "blob:",
-              "about:",
-            ];
-            if (
-              specialProtocols.some((protocol) => input.startsWith(protocol))
-            ) {
-              return originalFetch.call(this, input, init);
-            }
-
             rewrittenInput = rewriteUrl(input, "mp_");
           } catch (error) {
             console.error("[Fetch Interceptor] Error rewriting URL:", error);
             rewrittenInput = input;
           }
-        } else if (input instanceof Request) {
+        }
+        // 处理Request对象
+        else if (input instanceof Request) {
           try {
             const originalUrl = input.url;
-            const specialProtocols = [
-              "javascript:",
-              "data:",
-              "#",
-              "blob:",
-              "about:",
-            ];
+
+            // 检查特殊协议
             if (
               specialProtocols.some((protocol) =>
                 originalUrl.startsWith(protocol)
@@ -253,9 +229,6 @@ const proxyURL = "${proxyURL}";
 
             const rewrittenUrl = rewriteUrl(originalUrl, "mp_");
             rewrittenInput = new Request(rewrittenUrl, input);
-            console.log(
-              `[Fetch Interceptor] Rewrote Request URL: ${originalUrl} -> ${rewrittenUrl}`
-            );
           } catch (error) {
             console.error(
               "[Fetch Interceptor] Error rewriting Request URL:",
@@ -278,6 +251,7 @@ const proxyURL = "${proxyURL}";
 
   function overrideXHR(): void {
     const originalOpen = XMLHttpRequest.prototype.open;
+    const specialProtocols = ["javascript:", "data:", "#", "blob:", "about:"];
 
     XMLHttpRequest.prototype.open = function (
       method: string,
@@ -287,6 +261,7 @@ const proxyURL = "${proxyURL}";
       password?: string
     ): void {
       try {
+        // 如果 URL 无效，直接使用原始调用
         if (!url || typeof url !== "string") {
           console.warn("[XHR Interceptor] Invalid URL:", url);
           return originalOpen.call(
@@ -299,13 +274,7 @@ const proxyURL = "${proxyURL}";
           );
         }
 
-        const specialProtocols = [
-          "javascript:",
-          "data:",
-          "#",
-          "blob:",
-          "about:",
-        ];
+        // 检查特殊协议
         if (specialProtocols.some((protocol) => url.startsWith(protocol))) {
           return originalOpen.call(
             this,
@@ -317,8 +286,8 @@ const proxyURL = "${proxyURL}";
           );
         }
 
+        // 重写 URL
         const rewrittenUrl = rewriteUrl(url, "mp_");
-
         return originalOpen.call(
           this,
           method,
@@ -976,42 +945,160 @@ const proxyURL = "${proxyURL}";
     };
   }
 
-  /**
-   * 拦截IntersectionObserver API
-   */
-  function overrideIntersectionObserver(): void {
-    const OriginalIntersectionObserver = window.IntersectionObserver;
+  function overrideNodeMethods(): void {
+    const originalCreateTreeWalker = Document.prototype.createTreeWalker;
+    Document.prototype.createTreeWalker = function (
+      root: Node,
+      whatToShow?: number,
+      filter?: NodeFilter | null,
+      entityReferenceExpansion?: boolean
+    ): TreeWalker {
+      //@ts-ignore
+      if (root && typeof root === "object" && root._SLAX_obj_proxy) {
+        for (const [origObj, proxyObj] of (
+          window as any
+        ).slaxEnv.objProxies.entries()) {
+          if (proxyObj === root) {
+            root = origObj;
+            break;
+          }
+        }
+      }
 
-    // 使用构造函数模式正确重写
-    window.IntersectionObserver = function (
-      this: IntersectionObserver,
-      callback: IntersectionObserverCallback,
-      options?: IntersectionObserverInit
-    ): IntersectionObserver {
-      // 使用原始构造函数创建实例
-      const instance = new OriginalIntersectionObserver(callback, options);
+      if (!(root instanceof Node)) {
+        console.error("[TreeWalker Interceptor] Invalid root node:", root);
+        throw new TypeError(
+          "Failed to execute 'createTreeWalker' on 'Document': parameter 1 is not of type 'Node'."
+        );
+      }
 
-      // 重写observe方法以确保参数是有效的Element
-      const originalObserve = instance.observe;
-      instance.observe = function (target: Element): void {
-        if (!(target instanceof Element)) {
-          console.warn(
-            "[IntersectionObserver Interceptor] Invalid target passed to observe:",
-            target
-          );
-          return;
+      return originalCreateTreeWalker.call(
+        this,
+        root,
+        whatToShow || 0,
+        filter || null,
+        //@ts-ignore
+        entityReferenceExpansion || false
+      );
+    };
+
+    if (Document.prototype.createNodeIterator) {
+      const originalCreateNodeIterator = Document.prototype.createNodeIterator;
+      Document.prototype.createNodeIterator = function (
+        root: Node,
+        whatToShow?: number,
+        filter?: NodeFilter | null
+      ): NodeIterator {
+        //@ts-ignore
+        if (root && typeof root === "object" && root._SLAX_obj_proxy) {
+          for (const [origObj, proxyObj] of (
+            window as any
+          ).slaxEnv.objProxies.entries()) {
+            if (proxyObj === root) {
+              root = origObj;
+              break;
+            }
+          }
         }
 
-        return originalObserve.call(this, target);
-      };
+        if (!(root instanceof Node)) {
+          console.error("[NodeIterator Interceptor] Invalid root node:", root);
+          throw new TypeError(
+            "Failed to execute 'createNodeIterator' on 'Document': parameter 1 is not of type 'Node'."
+          );
+        }
 
-      return instance;
-    } as unknown as typeof IntersectionObserver;
+        return originalCreateNodeIterator.call(
+          this,
+          root,
+          whatToShow || 0,
+          filter || null
+        );
+      };
+    }
+
+    if (Range.prototype.setStart) {
+      const originalSetStart = Range.prototype.setStart;
+      Range.prototype.setStart = function (node: Node, offset: number): void {
+        //@ts-ignore
+        if (node && typeof node === "object" && node._SLAX_obj_proxy) {
+          for (const [origObj, proxyObj] of (
+            window as any
+          ).slaxEnv.objProxies.entries()) {
+            if (proxyObj === node) {
+              node = origObj;
+              break;
+            }
+          }
+        }
+
+        return originalSetStart.call(this, node, offset);
+      };
+    }
+
+    if (Range.prototype.setEnd) {
+      const originalSetEnd = Range.prototype.setEnd;
+      Range.prototype.setEnd = function (node: Node, offset: number): void {
+        //@ts-ignore
+        if (node && typeof node === "object" && node._SLAX_obj_proxy) {
+          for (const [origObj, proxyObj] of (
+            window as any
+          ).slaxEnv.objProxies.entries()) {
+            if (proxyObj === node) {
+              node = origObj;
+              break;
+            }
+          }
+        }
+
+        return originalSetEnd.call(this, node, offset);
+      };
+    }
+
+    const nodeMethodsToFix = [
+      "appendChild",
+      "insertBefore",
+      "replaceChild",
+      "removeChild",
+    ];
+
+    nodeMethodsToFix.forEach((methodName) => {
+      const originalMethod = Node.prototype[methodName];
+      // @ts-ignore
+      Node.prototype[methodName] = function (...args) {
+        const processedArgs = args.map((arg) => {
+          if (arg && typeof arg === "object" && arg._SLAX_obj_proxy) {
+            for (const [origObj, proxyObj] of (
+              window as any
+            ).slaxEnv.objProxies.entries()) {
+              if (proxyObj === arg) {
+                return origObj;
+              }
+            }
+          }
+          return arg;
+        });
+
+        return originalMethod.apply(this, processedArgs);
+      };
+    });
   }
 
-  // ==========================================
-  // 拦截器初始化
-  // ==========================================
+  function overrideDocumentDefaultView(): void {
+    const originalDefaultViewDesc = Object.getOwnPropertyDescriptor(
+      Document.prototype,
+      "defaultView"
+    );
+
+    if (!originalDefaultViewDesc || originalDefaultViewDesc.configurable) {
+      Object.defineProperty(Document.prototype, "defaultView", {
+        get: function () {
+          return window;
+        },
+        configurable: true,
+      });
+    }
+  }
 
   function initDOMInterceptors(): void {
     overrideDocumentCreateElement();
@@ -1021,14 +1108,29 @@ const proxyURL = "${proxyURL}";
   }
 
   function initElementInterceptors(): void {
-    createPropertyInterceptor(HTMLAnchorElement.prototype, "href");
-    createPropertyInterceptor(HTMLAreaElement.prototype, "href");
-    createPropertyInterceptor(HTMLImageElement.prototype, "src");
-    createPropertyInterceptor(HTMLIFrameElement.prototype, "src");
-    createPropertyInterceptor(HTMLVideoElement.prototype, "src");
-    createPropertyInterceptor(HTMLAudioElement.prototype, "src");
-    createPropertyInterceptor(HTMLSourceElement.prototype, "src");
-    createPropertyInterceptor(HTMLScriptElement.prototype, "src");
+    createPropertyInterceptor(HTMLAnchorElement.prototype, "href", "mp_");
+    createPropertyInterceptor(HTMLAreaElement.prototype, "href", "mp_");
+    createPropertyInterceptor(HTMLImageElement.prototype, "src", "mp_");
+    createPropertyInterceptor(HTMLIFrameElement.prototype, "src", "if_");
+    createPropertyInterceptor(HTMLVideoElement.prototype, "src", "mp_");
+    createPropertyInterceptor(HTMLAudioElement.prototype, "src", "mp_");
+    createPropertyInterceptor(HTMLSourceElement.prototype, "src", "mp_");
+
+    createPropertyInterceptor(
+      HTMLScriptElement.prototype,
+      "src",
+      "js_",
+      function (el) {
+        if (
+          el.getAttribute("type") === "module" ||
+          el.hasAttribute("nomodule") ||
+          el.getAttribute("type") === "importmap"
+        ) {
+          return "esm_";
+        }
+        return "js_";
+      }
+    );
 
     createPropertyInterceptor(
       HTMLLinkElement.prototype,
@@ -1049,7 +1151,7 @@ const proxyURL = "${proxyURL}";
     createSrcsetInterceptor(HTMLImageElement.prototype);
     createSrcsetInterceptor(HTMLSourceElement.prototype);
 
-    createPropertyInterceptor(HTMLFormElement.prototype, "action");
+    createPropertyInterceptor(HTMLFormElement.prototype, "action", "mp_");
   }
 
   function initAllInterceptors(): void {
@@ -1062,6 +1164,8 @@ const proxyURL = "${proxyURL}";
 
     overrideStyleProperties();
 
+    overrideNodeMethods();
+
     overrideFetch();
     overrideXHR();
 
@@ -1072,6 +1176,8 @@ const proxyURL = "${proxyURL}";
     overrideBeacon();
 
     initDOMInterceptors();
+
+    overrideDocumentDefaultView();
   }
 
   initAllInterceptors();

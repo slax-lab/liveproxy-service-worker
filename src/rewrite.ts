@@ -115,28 +115,25 @@ export function rewriteJS(
   timestamp: string,
   isModule: boolean
 ): string {
-  if (!js) return js;
-
-  if (isModule) {
-    js = js.replace(
-      /(import(?:['"\s]*(?:[\w*${}\s,]+from\s*)?['"\s]?['"\s]))((?:https?|[./]).*?)(['"\s])/g,
-      function (
-        match: string,
-        importStmt: string,
-        importUrl: string,
-        quote: string
-      ) {
-        try {
-          const fullUrl = parseUrl(importUrl, baseUrl);
-          const proxyUrl = `${self.location.origin}/proxy/${timestamp}esm_/${fullUrl}`;
-          return importStmt + proxyUrl + quote;
-        } catch (e) {
-          console.error("ESM import rewriting error:", e);
-          return match;
-        }
+  js = js.replace(
+    /(import(?:['"\s]*(?:[\w*${}\s,]+from\s*)?['"\s]?['"\s]))((?:https?|[./]).*?)(['"\s])/g,
+    function (
+      match: string,
+      importStmt: string,
+      importUrl: string,
+      quote: string
+    ) {
+      try {
+        const fullUrl = parseUrl(importUrl, baseUrl);
+        isModule = true;
+        const proxyUrl = `${self.location.origin}/proxy/${timestamp}esm_/${fullUrl}`;
+        return importStmt + proxyUrl + quote;
+      } catch (e) {
+        console.error("ESM import rewriting error:", e);
+        return match;
       }
-    );
-  }
+    }
+  );
 
   js = js.replace(
     /import\s*\(\s*(['"])((?:https?|[./]).*?)(['"])\s*\)/g,
@@ -148,7 +145,7 @@ export function rewriteJS(
     ) {
       try {
         const fullUrl = parseUrl(importUrl, baseUrl);
-
+        isModule = true;
         const proxyUrl = `${self.location.origin}/proxy/${timestamp}esm_/${fullUrl}`;
         return `import(${quote1}${proxyUrl}${quote2})`;
       } catch (e) {
@@ -171,8 +168,7 @@ export function rewriteJS(
 
       try {
         const fullUrl = parseUrl(url, baseUrl);
-        let mod = match.includes("fetch") ? "oe_" : "mp_";
-        const proxyUrl = `${self.location.origin}/proxy/${timestamp}${mod}/${fullUrl}`;
+        const proxyUrl = `${self.location.origin}/proxy/${timestamp}mp_/${fullUrl}`;
         return match.replace(url, proxyUrl);
       } catch (e) {
         console.error("JS API URL rewriting error:", e);
@@ -200,8 +196,7 @@ export function rewriteJS(
 
       try {
         const fullUrl = parseUrl(url, baseUrl);
-
-        const proxyUrl = `${self.location.origin}/proxy/${timestamp}oe_/${fullUrl}`;
+        const proxyUrl = `${self.location.origin}/proxy/${timestamp}js_/${fullUrl}`;
         return match.replace(url, proxyUrl);
       } catch (e) {
         console.error("XHR URL rewriting error:", e);
@@ -408,9 +403,6 @@ export function completeHtmlRewrite(
   html = html.replace(
     /<script([^>]*)>([\s\S]*?)<\/script>/gi,
     function (match, attrs, content) {
-      if (!attrs) {
-        return `<script>${wrapJavaScript(content, false)}</script>`;
-      }
       if (
         attrs.includes("application/ld+json") ||
         attrs.includes("application/json")
@@ -437,8 +429,15 @@ export function completeHtmlRewrite(
       }
 
       if (content.trim()) {
-        return `<script${attrs}>${wrapJavaScript(
+        const res = rewriteJS(
           content,
+          baseUrl,
+          timestamp,
+          attrs.includes("module")
+        );
+
+        return `<script${attrs}>${wrapJavaScript(
+          res,
           attrs.includes("module")
         )}</script>`;
       }

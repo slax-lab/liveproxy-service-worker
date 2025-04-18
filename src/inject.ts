@@ -655,7 +655,6 @@ const proxyURL = "${proxyURL}";
     } else if (element instanceof HTMLScriptElement) {
       interceptElementAttribute(element, "src", "js_");
     } else if (element instanceof HTMLLinkElement) {
-      // 对于link元素，需要检查rel属性
       const mod =
         element.rel === "stylesheet" ||
         element.as === "style" ||

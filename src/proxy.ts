@@ -33,24 +33,22 @@ export function processResponseHeaders(headers: Headers): Headers {
 }
 
 function handleESModule(): string {
-  return `var _____SLAX_function_____ = function(name) {
-    try {
-      if (self._SLAX_obj_proxy && self._SLAX_obj_proxy[name]) {
-        return self._SLAX_obj_proxy[name];
-      }
-      return self[name];
-    } catch (e) {
-      console.error("Error in SLAX assign function", e);
-      return self[name];
-    }
-  };
+  return `
+    var wrapObj = function(name) {return (self._SLAX_obj_proxy && self._SLAX_obj_proxy[name]) || self[name]; };
+    if (!self.__SLAX_pmw) { self.__SLAX_pmw = function(obj) { this.__SLAX_source = obj; return this; } }
 
-  const window = _____SLAX_function_____("window");
-  const self = _____SLAX_function_____("self");
-  const document = _____SLAX_function_____("document");
-  const location = _____SLAX_function_____("location");
+    const window = wrapObj("window");
+    const document = wrapObj("document");
+    const location = wrapObj("location");
+    const top = wrapObj("top");
+    const parent = wrapObj("parent");
+    const frames = wrapObj("frames");
+    const opener = wrapObj("opener");
+    const __self = wrapObj("self");
+    const __globalThis = wrapObj("globalThis");
 
-  export { window, self, document, location };`;
+    export { window, document, location, top, parent, frames, opener, __self as self, __globalThis as globalThis };
+    `;
 }
 
 export async function handleProxyRequest(
@@ -59,7 +57,7 @@ export async function handleProxyRequest(
   mod: string,
   origUrl: string
 ): Promise<Response> {
-  if (origUrl === "_slax_es_import.js") {
+  if (origUrl.includes("_slax_es_import.js")) {
     return new Response(handleESModule(), {
       status: 200,
       headers: {
@@ -274,19 +272,8 @@ export async function handleProxyRequest(
       contentTypeBase.includes("text/javascript")
     ) {
       const text = await response.text();
-      const isModule =
-        contentType.includes("module") ||
-        contentType.includes("application/x-javascript");
+      const isModule = contentType.includes("module") || mod === "esm";
       const rewrittenJs = rewriteJS(text, origUrl, timestamp, isModule);
-
-      if (isModule) {
-        respHeaders.set(
-          "Content-Type",
-          "application/javascript; charset=UTF-8"
-        );
-      } else {
-        respHeaders.set("Content-Type", "text/javascript; charset=UTF-8");
-      }
 
       return new Response(rewrittenJs, {
         status: response.status,

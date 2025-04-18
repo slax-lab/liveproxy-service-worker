@@ -1,19 +1,8 @@
+import { globalOverrides } from "./config";
 import { parseUrl } from "./url";
 import * as acorn from "acorn";
 
 const liveProxyCode = "";
-
-const globalOverrides = [
-  "window",
-  "globalThis",
-  "self",
-  "document",
-  "location",
-  "top",
-  "parent",
-  "frames",
-  "opener",
-];
 
 const GLOBALS_CONCAT_STR = globalOverrides
   .map((x) => `(?:^|[^$.])\\b${x}\\b(?:$|[^$])`)
@@ -21,16 +10,13 @@ const GLOBALS_CONCAT_STR = globalOverrides
 
 const GLOBALS_RX = new RegExp(`(${GLOBALS_CONCAT_STR})`);
 
-function wrapJavaScript(code: string): string {
-  const ESM_IMPORT_REGEX =
-    /import\s*(?:(?:(?:[\w*]\s*,\s*)?\{(?:[^{}]*)\}|(?:[\w*](?:\s+as\s+[\w*])?)|\*\s+as\s+[\w*])\s*(?:from\s*)?)?(?:["']([^"']+)["'])?(?:;|\s|$)/g;
+function warpESMCode(code: string): string {
+  return `import { ${globalOverrides.join(
+    ", "
+  )} } from './_slax_es_import.js';\n${code}`;
+}
 
-  const ESM_EXPORT_REGEX = /export(\{|\s).*/g;
-
-  if (ESM_IMPORT_REGEX.test(code) || ESM_EXPORT_REGEX.test(code)) {
-    return `import { window, self, document, location } from './_slax_es_import.js';\n${code}`;
-  }
-
+function warpJSCode(code: string, isModule: boolean): string {
   let ast: acorn.Node;
   try {
     ast = acorn.parse(code, { ecmaVersion: "latest" });
@@ -115,6 +101,14 @@ ${exportCode || docCloseCode}
   }`;
 }
 
+function wrapJavaScript(code: string, isModule: boolean): string {
+  if (isModule) {
+    return warpESMCode(code);
+  }
+
+  return warpJSCode(code, isModule);
+}
+
 export function rewriteJS(
   js: string,
   baseUrl: string,
@@ -134,7 +128,7 @@ export function rewriteJS(
       ) {
         try {
           const fullUrl = parseUrl(importUrl, baseUrl);
-          const proxyUrl = `${self.location.origin}/proxy/${timestamp}mp_/${fullUrl}`;
+          const proxyUrl = `${self.location.origin}/proxy/${timestamp}esm_/${fullUrl}`;
           return importStmt + proxyUrl + quote;
         } catch (e) {
           console.error("ESM import rewriting error:", e);
@@ -155,7 +149,7 @@ export function rewriteJS(
       try {
         const fullUrl = parseUrl(importUrl, baseUrl);
 
-        const proxyUrl = `${self.location.origin}/proxy/${timestamp}mp_/${fullUrl}`;
+        const proxyUrl = `${self.location.origin}/proxy/${timestamp}esm_/${fullUrl}`;
         return `import(${quote1}${proxyUrl}${quote2})`;
       } catch (e) {
         console.error("Dynamic import rewriting error:", e);
@@ -177,7 +171,6 @@ export function rewriteJS(
 
       try {
         const fullUrl = parseUrl(url, baseUrl);
-
         let mod = match.includes("fetch") ? "oe_" : "mp_";
         const proxyUrl = `${self.location.origin}/proxy/${timestamp}${mod}/${fullUrl}`;
         return match.replace(url, proxyUrl);
@@ -251,7 +244,6 @@ export function rewriteJS(
       }
 
       try {
-        // 使用固定的 URL 解析函数
         const fullUrl = parseUrl(url, baseUrl);
         const proxyUrl = `${self.location.origin}/proxy/${timestamp}js_/${fullUrl}`;
         return match.replace(url, proxyUrl);
@@ -262,7 +254,7 @@ export function rewriteJS(
     }
   );
 
-  return wrapJavaScript(js);
+  return wrapJavaScript(js, isModule);
 }
 
 export function rewriteCSS(css: string, baseUrl: string, timestamp: string) {
@@ -290,6 +282,7 @@ export function completeHtmlRewrite(
   baseUrl: string,
   timestamp: string
 ): string {
+  if (baseUrl.includes("_slax_es_import.js")) return html;
   const baseUrlObj = new URL(baseUrl);
   const baseOrigin = baseUrlObj.origin;
   console.log(`baseOrigin: ${baseOrigin}`);
@@ -400,16 +393,14 @@ export function completeHtmlRewrite(
 
       const fullUrl = parseUrl(href, baseUrl);
 
-      if (
-        match.includes("stylesheet") ||
-        match.includes("text/css") ||
-        href.endsWith(".css")
-      ) {
-        const proxyUrl = `${self.location.origin}/proxy/${timestamp}cs_/${fullUrl}`;
-        return match.replace(href, proxyUrl);
-      }
+      const isModulePreload =
+        match.toLowerCase().includes('rel="modulepreload"') ||
+        match.toLowerCase().includes("rel='modulepreload'") ||
+        match.toLowerCase().includes("rel=modulepreload");
 
-      const proxyUrl = `${self.location.origin}/proxy/${timestamp}oe_/${fullUrl}`;
+      const mod = isModulePreload ? "esm_" : "mp_";
+      const proxyUrl = `${self.location.origin}/proxy/${timestamp}${mod}/${fullUrl}`;
+
       return match.replace(href, proxyUrl);
     }
   );
@@ -418,7 +409,7 @@ export function completeHtmlRewrite(
     /<script([^>]*)>([\s\S]*?)<\/script>/gi,
     function (match, attrs, content) {
       if (!attrs) {
-        return `<script>${wrapJavaScript(content)}</script>`;
+        return `<script>${wrapJavaScript(content, false)}</script>`;
       }
       if (attrs.includes("application/ld+json")) return match;
 
@@ -431,7 +422,10 @@ export function completeHtmlRewrite(
             }
 
             const fullUrl = parseUrl(src, baseUrl);
-            const proxyUrl = `${self.location.origin}/proxy/${timestamp}js_/${fullUrl}`;
+            const isModule = attrs.includes("module");
+            const mod = isModule ? "esm_" : "js_";
+
+            const proxyUrl = `${self.location.origin}/proxy/${timestamp}${mod}/${fullUrl}`;
             return ` src="${proxyUrl}"`;
           }
         );
@@ -439,7 +433,10 @@ export function completeHtmlRewrite(
       }
 
       if (content.trim()) {
-        return `<script${attrs}>${wrapJavaScript(content)}</script>`;
+        return `<script${attrs}>${wrapJavaScript(
+          content,
+          attrs.includes("module")
+        )}</script>`;
       }
 
       return match;
@@ -454,7 +451,7 @@ export function completeHtmlRewrite(
       }
 
       const fullUrl = parseUrl(src, baseUrl);
-      const proxyUrl = `${self.location.origin}/proxy/${timestamp}oe_/${fullUrl}`;
+      const proxyUrl = `${self.location.origin}/proxy/${timestamp}mp_/${fullUrl}`;
       return match.replace(src, proxyUrl);
     }
   );
@@ -480,7 +477,7 @@ export function completeHtmlRewrite(
       }
 
       const fullUrl = parseUrl(src, baseUrl);
-      const proxyUrl = `${self.location.origin}/proxy/${timestamp}oe_/${fullUrl}`;
+      const proxyUrl = `${self.location.origin}/proxy/${timestamp}mp_/${fullUrl}`;
       return match.replace(src, proxyUrl);
     }
   );

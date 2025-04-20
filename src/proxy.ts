@@ -161,6 +161,7 @@ export async function handleProxyRequest(
     const respHeaders = processResponseHeaders(response.headers);
 
     const redirectStatus = respHeaders.get("x-redirect-status");
+
     if (redirectStatus) {
       const location = respHeaders.get("x-orig-location");
 
@@ -214,13 +215,14 @@ export async function handleProxyRequest(
       response.status !== 304 &&
       response.status !== 101;
 
+    let isModule = mod === "esm";
+
     if (!contentType || contentType.includes("application/octet-stream")) {
-      if (
-        path.endsWith(".js") ||
-        path.endsWith(".mjs") ||
-        path.endsWith(".cjs")
-      ) {
+      if (path.endsWith(".js") || path.endsWith(".cjs")) {
         contentType = "application/javascript";
+      } else if (path.endsWith(".mjs")) {
+        contentType = "application/javascript";
+        isModule = true;
       } else if (path.endsWith(".css")) {
         contentType = "text/css";
       } else if (path.endsWith(".html") || path.endsWith(".htm")) {
@@ -271,9 +273,12 @@ export async function handleProxyRequest(
       contentTypeBase.includes("application/x-javascript") ||
       contentTypeBase.includes("text/javascript")
     ) {
-      const text = await response.text();
-      const isModule = contentType.includes("module") || mod === "esm";
-      const rewrittenJs = rewriteJS(text, origUrl, timestamp, isModule);
+      const rewrittenJs = rewriteJS(
+        await response.text(),
+        origUrl,
+        timestamp,
+        isModule
+      );
 
       return new Response(rewrittenJs, {
         status: response.status,

@@ -116,26 +116,6 @@ export function rewriteJS(
   isModule: boolean
 ): string {
   js = js.replace(
-    /(import(?:['"\s]*(?:[\w*${}\s,]+from\s*)?['"\s]?['"\s]))((?:https?|[./]).*?)(['"\s])/g,
-    function (
-      match: string,
-      importStmt: string,
-      importUrl: string,
-      quote: string
-    ) {
-      try {
-        const fullUrl = parseUrl(importUrl, baseUrl);
-        isModule = true;
-        const proxyUrl = `${self.location.origin}/proxy/${timestamp}esm_/${fullUrl}`;
-        return importStmt + proxyUrl + quote;
-      } catch (e) {
-        console.error("ESM import rewriting error:", e);
-        return match;
-      }
-    }
-  );
-
-  js = js.replace(
     /import\s*\(\s*(['"])((?:https?|[./]).*?)(['"])\s*\)/g,
     function (
       match: string,
@@ -248,6 +228,28 @@ export function rewriteJS(
       }
     }
   );
+
+  if (isModule) {
+    js = js.replace(
+      /(import(?:['"\s]*(?:[\w*${}\s,]+from\s*)?['"\s]?['"\s]))((?:https?|[./]).*?)(['"\s])/g,
+      function (
+        match: string,
+        importStmt: string,
+        importUrl: string,
+        quote: string
+      ) {
+        try {
+          const fullUrl = parseUrl(importUrl, baseUrl);
+          isModule = true;
+          const proxyUrl = `${self.location.origin}/proxy/${timestamp}esm_/${fullUrl}`;
+          return importStmt + proxyUrl + quote;
+        } catch (e) {
+          console.error("ESM import rewriting error:", e);
+          return match;
+        }
+      }
+    );
+  }
 
   return wrapJavaScript(js, isModule);
 }
@@ -428,21 +430,12 @@ export function completeHtmlRewrite(
         return `<script${processedAttrs}>${content}</script>`;
       }
 
-      if (content.trim()) {
-        const res = rewriteJS(
-          content,
-          baseUrl,
-          timestamp,
-          attrs.includes("module")
-        );
-
-        return `<script${attrs}>${wrapJavaScript(
-          res,
-          attrs.includes("module")
-        )}</script>`;
-      }
-
-      return match;
+      return `<script${attrs}>${rewriteJS(
+        content,
+        baseUrl,
+        timestamp,
+        attrs.includes("module")
+      )}</script>`;
     }
   );
 

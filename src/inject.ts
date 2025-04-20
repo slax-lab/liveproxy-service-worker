@@ -526,7 +526,7 @@ const proxyURL = "${proxyURL}";
       interceptElementAttribute(element, "src", "mp_");
       interceptElementSrcset(element);
     } else if (element instanceof HTMLIFrameElement) {
-      interceptElementAttribute(element, "src", "mp_");
+      interceptElementAttribute(element, "src", "if_");
     } else if (element instanceof HTMLVideoElement) {
       interceptElementAttribute(element, "src", "mp_");
     } else if (element instanceof HTMLAudioElement) {
@@ -535,15 +535,27 @@ const proxyURL = "${proxyURL}";
       interceptElementAttribute(element, "src", "mp_");
       interceptElementSrcset(element);
     } else if (element instanceof HTMLScriptElement) {
-      interceptElementAttribute(element, "src", "js_");
+      if (element.getAttribute("type") === "module") {
+        interceptElementAttribute(element, "src", "esm");
+      } else {
+        interceptElementAttribute(element, "src", "js_");
+      }
     } else if (element instanceof HTMLLinkElement) {
-      const mod =
+      let mod = "mp_";
+      if (
         element.rel === "stylesheet" ||
         element.as === "style" ||
         (element.getAttribute("href") &&
           element.getAttribute("href")!.endsWith(".css"))
-          ? "cs_"
-          : "mp_";
+      ) {
+        mod = "cs_";
+      } else if (
+        element.getAttribute("href")?.endsWith(".mjs") ||
+        element.rel === "modulepreload" ||
+        element.rel === "module"
+      ) {
+        mod = "esm";
+      }
       interceptElementAttribute(element, "href", mod);
     } else if (element instanceof HTMLFormElement) {
       interceptElementAttribute(element, "action", "mp_");
@@ -567,7 +579,7 @@ const proxyURL = "${proxyURL}";
   function interceptElementAttribute(
     element: HTMLElement,
     attributeName: string,
-    mod: string = "mp_"
+    mod: string
   ): void {
     const originalValue = element.getAttribute(attributeName);
 
@@ -580,7 +592,7 @@ const proxyURL = "${proxyURL}";
     element.setAttribute = function (name: string, value: string): void {
       if (name === attributeName) {
         const rewrittenValue = rewriteUrl(value, mod);
-        return originalSetAttribute.call(this, name, rewrittenValue);
+        return originalSetAttribute.call(this, name, value);
       }
       return originalSetAttribute.call(this, name, value);
     };
@@ -647,7 +659,11 @@ const proxyURL = "${proxyURL}";
             if (value) {
               let mod = "mp_";
               if (element instanceof HTMLScriptElement) {
-                mod = "js_";
+                if (element.getAttribute("type") === "module") {
+                  mod = "esm";
+                } else {
+                  mod = "js_";
+                }
               } else if (
                 element instanceof HTMLLinkElement &&
                 (element.rel === "stylesheet" ||

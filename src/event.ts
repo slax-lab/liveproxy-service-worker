@@ -92,3 +92,13 @@ export function handleFetchEvent(event: FetchEvent) {
 
   event.respondWith(handleProxyRequest(event.request, timestamp, mod, origUrl));
 }
+
+export function handleMessageEvent(event: MessageEvent) {
+  console.log("handleMessageEvent", event);
+  if (event.data.msg_type === "init") {
+    event.source?.postMessage({
+      msg_type: "init_done",
+      timestamp: Date.now(),
+    });
+  }
+}

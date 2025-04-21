@@ -42,6 +42,10 @@ const proxyURL = "${proxyURL}";
     }
   }
 
+  function hasDataAttributes(element: HTMLElement): boolean {
+    return element.getAttributeNames().some((name) => name.startsWith("data-"));
+  }
+
   function createPropertyInterceptor(
     prototype: any,
     propName: string,
@@ -58,6 +62,9 @@ const proxyURL = "${proxyURL}";
         const value = originalDescriptor
           ? originalDescriptor.get!.call(this)
           : this.getAttribute(propName);
+        if (hasDataAttributes(this)) {
+          return this.getAttribute(propName) || "";
+        }
         return extractOriginalUrl(value) || "";
       },
       set: function (this: HTMLElement, value: string): void {
@@ -261,7 +268,6 @@ const proxyURL = "${proxyURL}";
       password?: string
     ): void {
       try {
-        // 如果 URL 无效，直接使用原始调用
         if (!url || typeof url !== "string") {
           console.warn("[XHR Interceptor] Invalid URL:", url);
           return originalOpen.call(
@@ -961,6 +967,75 @@ const proxyURL = "${proxyURL}";
     };
   }
 
+  function overrideImport(): void {
+    //@ts-ignore
+    window.__slax_js_import__ = function (base: string, url: string) {
+      return import(rewriteUrl(url, "esm_"));
+    };
+  }
+
+  function overrideQuerySelectors(): void {
+    if (!document.querySelector || !Document.prototype.querySelector) {
+      return;
+    }
+
+    function rewriteQuery(query: string): string {
+      if (typeof query === "string") {
+        try {
+          return query.replace(
+            /(\[(?:src|href|data-href))([\^]?=(['"])(?:https?:)?\/\/[^'"]*\3)\]/g,
+            "$1*$2]"
+          );
+        } catch (error) {
+          console.error(
+            "[Query Selector Interceptor] Error in rewriteQuery:",
+            error
+          );
+        }
+      }
+      return query;
+    }
+
+    function getOriginalObject(obj: any): any {
+      if (obj && typeof obj === "object" && obj._SLAX_obj_proxy) {
+        for (const [origObj, proxyObj] of (
+          window as any
+        ).slaxEnv.objProxies.entries()) {
+          if (proxyObj === obj) {
+            return origObj;
+          }
+        }
+      }
+      return obj;
+    }
+
+    const orig_QS = document.querySelector;
+    const orig_QSA = document.querySelectorAll;
+
+    const querySelector = function (this: any, query: string): Element | null {
+      const originalThis = getOriginalObject(this);
+      const result = orig_QS.call(originalThis, rewriteQuery(query));
+      console.log("querySelector", query, result);
+      return result;
+    };
+
+    const querySelectorAll = function (
+      this: any,
+      query: string
+    ): NodeListOf<Element> {
+      const originalThis = getOriginalObject(this);
+      const result = orig_QSA.call(originalThis, rewriteQuery(query));
+      console.log("querySelectorAll", query, result);
+      return result;
+    };
+
+    Document.prototype.querySelector = querySelector;
+    document.querySelector = querySelector;
+
+    Document.prototype.querySelectorAll = querySelectorAll;
+    document.querySelectorAll = querySelectorAll;
+  }
+
   function overrideNodeMethods(): void {
     const originalCreateTreeWalker = Document.prototype.createTreeWalker;
     Document.prototype.createTreeWalker = function (
@@ -1187,6 +1262,8 @@ const proxyURL = "${proxyURL}";
 
     overrideWorkers();
 
+    overrideQuerySelectors();
+
     disableNotifications();
     disableGeolocation();
     overrideBeacon();
@@ -1194,6 +1271,8 @@ const proxyURL = "${proxyURL}";
     initDOMInterceptors();
 
     overrideDocumentDefaultView();
+
+    overrideImport();
   }
 
   initAllInterceptors();

@@ -229,6 +229,17 @@ export function rewriteJS(
     }
   );
 
+  js = js.replace(
+    /(?<!\.|\$)\bimport\s*\(\s*([^)]+?)\s*\)/g,
+    function (match, importArg) {
+      if (isModule) {
+        return `__slax_js_import__(${importArg}, import.meta.url)`;
+      } else {
+        return `__slax_js_import__(null, ${importArg})`;
+      }
+    }
+  );
+
   if (isModule) {
     js = js.replace(
       /(import(?:['"\s]*(?:[\w*${}\s,]+from\s*)?['"\s]?['"\s]))((?:https?|[./]).*?)(['"\s])/g,

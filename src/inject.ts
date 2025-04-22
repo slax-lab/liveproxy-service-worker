@@ -822,33 +822,42 @@ const proxyURL = "${proxyURL}";
       newChild: T,
       refChild: Node | null
     ): T {
-      if (typeof newChild === "string") {
-        console.warn(
-          "[Node Interceptor] String passed to insertBefore, converting to TextNode"
-        );
-        const textNode = document.createTextNode(newChild);
-        return originalInsertBefore.call(
-          this,
-          textNode,
-          refChild
-        ) as unknown as T;
-      }
+      try {
+        if (typeof newChild === "string") {
+          console.warn(
+            "[Node Interceptor] String passed to insertBefore, converting to TextNode"
+          );
+          const textNode = document.createTextNode(newChild);
+          return originalInsertBefore.call(
+            this,
+            textNode,
+            refChild
+          ) as unknown as T;
+        }
 
-      if (!(newChild instanceof Node)) {
-        console.warn(
-          "[Node Interceptor] Invalid parameter passed to insertBefore:",
-          newChild
-        );
-        throw new TypeError(
-          "Failed to execute 'insertBefore' on 'Node': parameter 1 is not of type 'Node'"
-        );
-      }
+        if (!(newChild instanceof Node)) {
+          console.warn(
+            "[Node Interceptor] Invalid parameter passed to insertBefore:",
+            newChild
+          );
+          throw new TypeError(
+            "Failed to execute 'insertBefore' on 'Node': parameter 1 is not of type 'Node'"
+          );
+        }
 
-      if (newChild instanceof HTMLElement) {
-        applyInterceptorsToNewElement(newChild);
+        if (newChild instanceof HTMLElement) {
+          applyInterceptorsToNewElement(newChild);
+        }
+        //@ts-ignore
+        return originalInsertBefore.call(this, newChild, refChild);
+      } catch (e) {
+        console.warn(
+          "[Node Interceptor] Error in insertBefore, using original method:",
+          e
+        );
+        //@ts-ignore
+        return originalInsertBefore.call(this, newChild, refChild);
       }
-      //@ts-ignore
-      return originalInsertBefore.call(this, newChild, refChild);
     };
 
     const originalReplaceChild = Node.prototype.replaceChild;
@@ -857,62 +866,87 @@ const proxyURL = "${proxyURL}";
       newChild: T,
       oldChild: Node
     ): T {
-      if (typeof newChild === "string") {
-        console.warn(
-          "[Node Interceptor] String passed to replaceChild, converting to TextNode"
-        );
-        const textNode = document.createTextNode(newChild);
-        return originalReplaceChild.call(
-          this,
-          textNode,
-          oldChild
-        ) as unknown as T;
-      }
+      try {
+        if (typeof newChild === "string") {
+          console.warn(
+            "[Node Interceptor] String passed to replaceChild, converting to TextNode"
+          );
+          const textNode = document.createTextNode(newChild);
+          return originalReplaceChild.call(
+            this,
+            textNode,
+            oldChild
+          ) as unknown as T;
+        }
 
-      if (!(newChild instanceof Node)) {
-        console.warn(
-          "[Node Interceptor] Invalid parameter passed to replaceChild:",
-          newChild
-        );
-        throw new TypeError(
-          "Failed to execute 'replaceChild' on 'Node': parameter 1 is not of type 'Node'"
-        );
-      }
+        if (!(newChild instanceof Node)) {
+          console.warn(
+            "[Node Interceptor] Invalid parameter passed to replaceChild:",
+            newChild
+          );
+          throw new TypeError(
+            "Failed to execute 'replaceChild' on 'Node': parameter 1 is not of type 'Node'"
+          );
+        }
 
-      if (newChild instanceof HTMLElement) {
-        applyInterceptorsToNewElement(newChild);
+        if (newChild instanceof HTMLElement) {
+          applyInterceptorsToNewElement(newChild);
+        }
+        //@ts-ignore
+        return originalReplaceChild.call(this, newChild, oldChild);
+      } catch (e) {
+        console.warn(
+          "[Node Interceptor] Error in replaceChild, using original method:",
+          e
+        );
+        //@ts-ignore
+        return originalReplaceChild.call(this, newChild, oldChild);
       }
-      //@ts-ignore
-      return originalReplaceChild.call(this, newChild, oldChild);
     };
 
     if (Element.prototype.append) {
       const originalAppend = Element.prototype.append;
       Element.prototype.append = function (...nodes: (Node | string)[]) {
-        const processedNodes = nodes.map((node) => {
-          if (node instanceof HTMLElement) {
-            applyInterceptorsToNewElement(node);
+        try {
+          const processedNodes = nodes.map((node) => {
+            if (node instanceof HTMLElement) {
+              applyInterceptorsToNewElement(node);
+              return node;
+            }
             return node;
-          }
-          return node;
-        });
+          });
 
-        return originalAppend.apply(this, processedNodes);
+          return originalAppend.apply(this, processedNodes);
+        } catch (e) {
+          console.warn(
+            "[Node Interceptor] Error in append, using original method:",
+            e
+          );
+          return originalAppend.apply(this, nodes);
+        }
       };
     }
 
     if (Element.prototype.prepend) {
       const originalPrepend = Element.prototype.prepend;
       Element.prototype.prepend = function (...nodes: (Node | string)[]) {
-        const processedNodes = nodes.map((node) => {
-          if (node instanceof HTMLElement) {
-            applyInterceptorsToNewElement(node);
+        try {
+          const processedNodes = nodes.map((node) => {
+            if (node instanceof HTMLElement) {
+              applyInterceptorsToNewElement(node);
+              return node;
+            }
             return node;
-          }
-          return node;
-        });
+          });
 
-        return originalPrepend.apply(this, processedNodes);
+          return originalPrepend.apply(this, processedNodes);
+        } catch (e) {
+          console.warn(
+            "[Node Interceptor] Error in prepend, using original method:",
+            e
+          );
+          return originalPrepend.apply(this, nodes);
+        }
       };
     }
 
@@ -921,49 +955,57 @@ const proxyURL = "${proxyURL}";
       name: string,
       value: string
     ): void {
-      const urlAttributes = ["src", "href", "action", "data-src"];
-      if (urlAttributes.includes(name) && typeof value === "string") {
-        let mod = "mp_";
+      try {
+        const urlAttributes = ["src", "href", "action", "data-src"];
+        if (urlAttributes.includes(name) && typeof value === "string") {
+          let mod = "mp_";
 
-        if (this instanceof HTMLScriptElement && name === "src") {
-          mod = "js_";
-        } else if (
-          this instanceof HTMLLinkElement &&
-          name === "href" &&
-          (this.rel === "stylesheet" ||
-            this.as === "style" ||
-            (value && value.endsWith(".css")))
-        ) {
-          mod = "cs_";
+          if (this instanceof HTMLScriptElement && name === "src") {
+            mod = "js_";
+          } else if (
+            this instanceof HTMLLinkElement &&
+            name === "href" &&
+            (this.rel === "stylesheet" ||
+              this.as === "style" ||
+              (value && value.endsWith(".css")))
+          ) {
+            mod = "cs_";
+          }
+
+          const rewrittenValue = rewriteUrl(value, mod);
+          return originalSetAttribute.call(this, name, rewrittenValue);
         }
 
-        const rewrittenValue = rewriteUrl(value, mod);
-        return originalSetAttribute.call(this, name, rewrittenValue);
+        if (name === "srcset" && typeof value === "string") {
+          const parts = value.split(",").map((part) => {
+            const [url, ...descriptors] = part.trim().split(/\s+/);
+            if (url && !url.startsWith("data:")) {
+              const rewrittenUrl = rewriteUrl(url, "mp_");
+              return [rewrittenUrl, ...descriptors].join(" ");
+            }
+            return part;
+          });
+
+          return originalSetAttribute.call(this, name, parts.join(", "));
+        }
+
+        if (
+          name === "style" &&
+          typeof value === "string" &&
+          value.includes("url(")
+        ) {
+          const rewrittenStyle = rewriteCssUrls(value);
+          return originalSetAttribute.call(this, name, rewrittenStyle);
+        }
+
+        return originalSetAttribute.call(this, name, value);
+      } catch (e) {
+        console.warn(
+          "[Node Interceptor] Error in setAttribute, using original method:",
+          e
+        );
+        return originalSetAttribute.call(this, name, value);
       }
-
-      if (name === "srcset" && typeof value === "string") {
-        const parts = value.split(",").map((part) => {
-          const [url, ...descriptors] = part.trim().split(/\s+/);
-          if (url && !url.startsWith("data:")) {
-            const rewrittenUrl = rewriteUrl(url, "mp_");
-            return [rewrittenUrl, ...descriptors].join(" ");
-          }
-          return part;
-        });
-
-        return originalSetAttribute.call(this, name, parts.join(", "));
-      }
-
-      if (
-        name === "style" &&
-        typeof value === "string" &&
-        value.includes("url(")
-      ) {
-        const rewrittenStyle = rewriteCssUrls(value);
-        return originalSetAttribute.call(this, name, rewrittenStyle);
-      }
-
-      return originalSetAttribute.call(this, name, value);
     };
   }
 
@@ -1272,7 +1314,7 @@ const proxyURL = "${proxyURL}";
 
     overrideDocumentDefaultView();
 
-    overrideImport();
+    // overrideImport();
   }
 
   initAllInterceptors();

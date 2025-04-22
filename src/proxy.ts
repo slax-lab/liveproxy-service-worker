@@ -1,5 +1,6 @@
 import { completeHtmlRewrite, rewriteCSS, rewriteJS } from "./rewrite";
 import { proxyPrefix, REPLAY_URL_PREFIX } from "./config";
+import { isCdnUrl } from "./cdn";
 
 export function processResponseHeaders(headers: Headers): Headers {
   const newHeaders = new Headers(headers);
@@ -66,7 +67,10 @@ export async function handleProxyRequest(
     });
   }
 
-  const proxyUrl = proxyPrefix + origUrl;
+  let proxyUrl = origUrl;
+  if (!isCdnUrl(origUrl) || ["im_", "esm_", "js_", "cs_"].includes(mod)) {
+    proxyUrl = proxyPrefix + origUrl;
+  }
 
   const headers = new Headers();
   for (const [key, value] of request.headers.entries()) {

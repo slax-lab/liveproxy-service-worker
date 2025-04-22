@@ -106,11 +106,12 @@ const bypassRegexPatterns = [
   /polyfill\.io/,
   /recaptcha\.net/,
   /gstatic\.com/,
-  /badjs\.weixinbridge\.com/,
-  /res\.wx\.qq\.com/,
   /github\.githubassets\.com/,
   /\*.githubusercontent.com/,
   /cdn\.v2ex\.com/,
+
+  /static\.cloudflareinsights\.com/,
+  /cdn-cgi\/challenge-platform\/scripts\/jsd\/main\.js/,
 ];
 
 export function isCdnUrl(url: string) {

@@ -280,7 +280,6 @@ const proxyURL = "${proxyURL}";
           );
         }
 
-        // 检查特殊协议
         if (specialProtocols.some((protocol) => url.startsWith(protocol))) {
           return originalOpen.call(
             this,
@@ -560,7 +559,7 @@ const proxyURL = "${proxyURL}";
         element.rel === "modulepreload" ||
         element.rel === "module"
       ) {
-        mod = "esm";
+        mod = "esm_";
       }
       interceptElementAttribute(element, "href", mod);
     } else if (element instanceof HTMLFormElement) {
@@ -1276,6 +1275,13 @@ const proxyURL = "${proxyURL}";
           (el.getAttribute("href") && el.getAttribute("href")!.endsWith(".css"))
         ) {
           return "cs_";
+        } else if (
+          (el.getAttribute("href")?.endsWith(".mjs") ||
+            el.getAttribute("rel")?.includes("modulepreload") ||
+            el.getAttribute("rel")?.includes("module")) &&
+          !el.getAttribute("nomodule")
+        ) {
+          return "esm_";
         }
         return "mp_";
       }

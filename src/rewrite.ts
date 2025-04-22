@@ -398,15 +398,29 @@ export function completeHtmlRewrite(
       if (href.startsWith("#")) {
         return match;
       }
+      if (match.toLocaleLowerCase().includes("dns-prefetch")) {
+        return match;
+      }
 
       const fullUrl = parseUrl(href, baseUrl);
 
-      const isModulePreload =
+      let mod = "mp_";
+
+      if (
         match.toLowerCase().includes('rel="modulepreload"') ||
         match.toLowerCase().includes("rel='modulepreload'") ||
-        match.toLowerCase().includes("rel=modulepreload");
+        match.toLowerCase().includes("rel=modulepreload")
+      ) {
+        mod = "esm_";
+      }
 
-      const mod = isModulePreload ? "esm_" : "mp_";
+      if (
+        href.includes(".css") ||
+        match.toLocaleLowerCase().includes("stylesheet")
+      ) {
+        mod = "cs_";
+      }
+
       const proxyUrl = `${self.location.origin}/proxy/${timestamp}${mod}/${fullUrl}`;
 
       return match.replace(href, proxyUrl);

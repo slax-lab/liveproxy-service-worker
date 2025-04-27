@@ -34,17 +34,26 @@ export class SlaxLocation implements ILocation {
     this._originalLocation = originalLocation;
 
     const originalHref = extractOriginalUrl(originalLocation.href);
-
-    this._url = new URL(originalHref!);
-    this._href = originalHref!;
-    this._protocol = this._url.protocol;
-    this._host = this._url.host;
-    this._hostname = this._url.hostname;
-    this._port = this._url.port;
-    this._pathname = this._url.pathname;
-    this._search = this._url.search;
-    this._hash = this._url.hash;
-    this._origin = this._url.origin;
+    try {
+      this._url = new URL(originalHref!);
+      this._href = originalHref!;
+      this._protocol = this._url.protocol;
+      this._host = this._url.host;
+      this._hostname = this._url.hostname;
+      this._port = this._url.port;
+      this._pathname = this._url.pathname;
+      this._search = this._url.search;
+      this._hash = this._url.hash;
+      this._origin = this._url.origin;
+    } catch (e) {
+      console.error(
+        "Error creating URL:",
+        e,
+        originalHref,
+        originalLocation.href
+      );
+      throw e;
+    }
   }
 
   get href(): string {

@@ -1,4 +1,9 @@
-import { globalOverrides } from "./config";
+import {
+  globalOverrides,
+  REPLAY_URL_PREFIX,
+  REPLAY_URL_PREFIX_REGEXP,
+  REPLAY_URL_PREFIX_REGEXP_STR,
+} from "./config";
 import { parseUrl } from "./url";
 import * as acorn from "acorn";
 
@@ -345,7 +350,7 @@ export function completeHtmlRewrite(
         const srcMatch = match.match(/src\s*=\s*["']([^"']+)["']/i);
         if (srcMatch && !srcMatch[1].startsWith("data:")) {
           const fullUrl = parseUrl(srcMatch[1], baseUrl);
-          const proxyUrl = `${currentOrigin}/w/liveproxy/mp_/${fullUrl}`;
+          const proxyUrl = `${currentOrigin}${REPLAY_URL_PREFIX}/mp_/${fullUrl}`;
           result = result.replace(srcMatch[0], `src="${proxyUrl}"`);
         }
       }
@@ -354,7 +359,7 @@ export function completeHtmlRewrite(
         const dataSrcMatch = match.match(/data-src\s*=\s*["']([^"']+)["']/i);
         if (dataSrcMatch) {
           const fullUrl = parseUrl(dataSrcMatch[1], baseUrl);
-          const proxyUrl = `${currentOrigin}/w/liveproxy/mp_/${fullUrl}`;
+          const proxyUrl = `${currentOrigin}${REPLAY_URL_PREFIX}/mp_/${fullUrl}`;
           result = result.replace(dataSrcMatch[0], `data-src="${proxyUrl}"`);
 
           if (
@@ -382,7 +387,7 @@ export function completeHtmlRewrite(
         const [url, ...rest] = part.trim().split(/\s+/);
         if (url && !url.startsWith("data:")) {
           const fullUrl = parseUrl(url, baseUrl);
-          const proxyUrl = `${currentOrigin}/w/liveproxy/mp_/${fullUrl}`;
+          const proxyUrl = `${currentOrigin}${REPLAY_URL_PREFIX}/mp_/${fullUrl}`;
           return [proxyUrl, ...rest].join(" ");
         }
         return part;
@@ -485,7 +490,7 @@ export function completeHtmlRewrite(
       }
 
       const fullUrl = parseUrl(poster, baseUrl);
-      const proxyUrl = `${self.location.origin}/w/liveproxy/mp_/${fullUrl}`;
+      const proxyUrl = `${self.location.origin}${REPLAY_URL_PREFIX}/mp_/${fullUrl}`;
       return match.replace(poster, proxyUrl);
     }
   );
@@ -511,7 +516,7 @@ export function completeHtmlRewrite(
       }
 
       const fullUrl = parseUrl(url, baseUrl);
-      const proxyUrl = `${self.location.origin}/w/liveproxy/mp_/${fullUrl}`;
+      const proxyUrl = `${self.location.origin}${REPLAY_URL_PREFIX}/mp_/${fullUrl}`;
       return match.replace(url, proxyUrl);
     }
   );
@@ -550,7 +555,9 @@ export function completeHtmlRewrite(
    <script>
    ${liveProxyCode
      .replace("${originURL}", baseUrl)
-     .replace("${proxyURL}", self.location.origin)}
+     .replace("${proxyURL}", self.location.origin)
+     .replace("${proxyPrefixPath}", REPLAY_URL_PREFIX)
+     .replace("${proxyPrefixPathRegexpStr}", REPLAY_URL_PREFIX_REGEXP_STR)}
    </script>
    <style>
     body {

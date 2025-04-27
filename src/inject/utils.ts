@@ -1,9 +1,8 @@
-export function extractOriginalUrl(url: string | null): string | null {
-  if (!url || typeof url !== "string") return url;
-
-  const newProxyMatch = url.match(/\/w\/liveproxy\/[^\/]*([a-z_]+)\/(.+)/);
+export function extractOriginalUrl(url: string): string {
+  //@ts-ignore
+  const newProxyMatch = url.match(window.proxyPrefixPathRegexp);
   if (newProxyMatch) {
-    return newProxyMatch[2];
+    return newProxyMatch[4];
   }
 
   const oldProxyMatch = url.match(/\/proxy\/[^\/]*([a-z_]+)\/(.+)/);

@@ -2,8 +2,9 @@ export const disablePostHost = [/mp\.weixin\.qq\.com/];
 
 export const proxyPrefix = "https://wabac-test.slax.dev/proxy/";
 
-export const REPLAY_URL_PREFIX =
-  /(?:\/proxy\/(?:([0-9]*)([a-z]{2,3})_)?\/|\/w\/liveproxy\/(?:([a-z]{2,3})_)?\/)(https?:\/\/.+)/;
+export let REPLAY_URL_PREFIX;
+export let REPLAY_URL_PREFIX_REGEXP_STR;
+export let REPLAY_URL_PREFIX_REGEXP;
 
 export const globalOverrides = [
   "window",
@@ -12,3 +13,9 @@ export const globalOverrides = [
   "document",
   "location",
 ];
+
+export function setProxyPathPrefix(prefix: string, regexp: string) {
+  REPLAY_URL_PREFIX = prefix;
+  REPLAY_URL_PREFIX_REGEXP_STR = regexp;
+  REPLAY_URL_PREFIX_REGEXP = new RegExp(regexp);
+}

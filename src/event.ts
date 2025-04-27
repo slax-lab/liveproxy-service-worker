@@ -1,5 +1,9 @@
 import { handleProxyRequest } from "./proxy";
-import { REPLAY_URL_PREFIX } from "./config";
+import {
+  REPLAY_URL_PREFIX,
+  REPLAY_URL_PREFIX_REGEXP,
+  setProxyPathPrefix,
+} from "./config";
 
 export function handleInstallEvent(event: ExtendableEvent) {
   event.waitUntil(self.skipWaiting());
@@ -31,12 +35,12 @@ export function handleFetchEvent(event: FetchEvent) {
   const url = event.request.url;
   const urlObj = new URL(url);
 
-  const replayMatch = urlObj.pathname.match(REPLAY_URL_PREFIX);
+  const replayMatch = urlObj.pathname.match(REPLAY_URL_PREFIX_REGEXP);
   if (!replayMatch) {
     const referer = event.request.headers.get("Referer");
-    if (referer && referer.match(REPLAY_URL_PREFIX)) {
+    if (referer && referer.match(REPLAY_URL_PREFIX_REGEXP)) {
       const refererObj = new URL(referer);
-      const refMatch = refererObj.pathname.match(REPLAY_URL_PREFIX);
+      const refMatch = refererObj.pathname.match(REPLAY_URL_PREFIX_REGEXP);
       if (refMatch) {
         const timestamp = "";
         const mod = "if_";
@@ -60,7 +64,7 @@ export function handleFetchEvent(event: FetchEvent) {
     timestamp = replayMatch[1] || "";
     mod = replayMatch[2] || "";
     origUrl = replayMatch[4] || "";
-  } else if (matchPath.includes("/w/liveproxy/")) {
+  } else if (matchPath.includes(REPLAY_URL_PREFIX)) {
     mod = replayMatch[3] || "";
     origUrl = replayMatch[4] || "";
   } else {
@@ -96,6 +100,9 @@ export function handleFetchEvent(event: FetchEvent) {
 export function handleMessageEvent(event: MessageEvent) {
   console.log("handleMessageEvent", event);
   if (event.data.msg_type === "init") {
+    const proxyPrefix = event.data.proxy_prefix;
+    const proxyPrefixRegexp = event.data.proxy_prefix_regexp;
+    setProxyPathPrefix(proxyPrefix, proxyPrefixRegexp);
     event.source?.postMessage({
       msg_type: "init_done",
       timestamp: Date.now(),

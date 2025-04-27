@@ -2,8 +2,13 @@ import { parseUrl } from "./url";
 import { SlaxLocation } from "./inject/location";
 import { SlaxEnv } from "./inject/proxy";
 import { extractOriginalUrl } from "./inject/utils";
+
 const originURL = "${originURL}";
 const proxyURL = "${proxyURL}";
+//@ts-ignore
+window.proxyPrefixPath = "${proxyPrefixPath}";
+//@ts-ignore
+window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
 
 (function () {
   if ((window as any).__URL_REWRITER_INITIALIZED__) return;
@@ -36,7 +41,8 @@ const proxyURL = "${proxyURL}";
         return url;
       }
 
-      return `${proxyURL}/w/liveproxy/${mod}/${fullUrl}`;
+      //@ts-ignore
+      return `${proxyURL}${window.proxyPrefixPath}/${mod}/${fullUrl}`;
     } catch (error) {
       return url;
     }

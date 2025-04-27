@@ -1,5 +1,10 @@
 import { completeHtmlRewrite, rewriteCSS, rewriteJS } from "./rewrite";
-import { proxyPrefix, REPLAY_URL_PREFIX } from "./config";
+import {
+  proxyPrefix,
+  REPLAY_URL_PREFIX,
+  REPLAY_URL_PREFIX_REGEXP,
+  REPLAY_URL_PREFIX_REGEXP_STR,
+} from "./config";
 import { isCdnUrl } from "./cdn";
 
 export function processResponseHeaders(headers: Headers): Headers {
@@ -86,9 +91,9 @@ export async function handleProxyRequest(
   const refererUrl = new URL(request.referrer || request.url);
   if (
     refererUrl.pathname.includes("/proxy/") ||
-    refererUrl.pathname.includes("/w/liveproxy/")
+    refererUrl.pathname.includes(REPLAY_URL_PREFIX)
   ) {
-    const refMatch = refererUrl.pathname.match(REPLAY_URL_PREFIX);
+    const refMatch = refererUrl.pathname.match(REPLAY_URL_PREFIX_REGEXP);
     if (refMatch) {
       let refOrigUrl;
       if (refMatch[4]) {
@@ -108,7 +113,7 @@ export async function handleProxyRequest(
       if (refOrigUrl) {
         headers.set("X-Proxy-Referer", refOrigUrl);
         const currentOrigin = self.location.origin || "";
-        const proxyReferer = `${currentOrigin}/w/liveproxy/mp_/${refOrigUrl}`;
+        const proxyReferer = `${currentOrigin}${REPLAY_URL_PREFIX}/mp_/${refOrigUrl}`;
         headers.set("Referer", proxyReferer);
       }
     }
@@ -174,12 +179,12 @@ export async function handleProxyRequest(
 
         if (location.startsWith("/")) {
           const urlObj = new URL(origUrl);
-          newLocation = `/w/liveproxy/mp_/${urlObj.origin}${location}`;
+          newLocation = `${REPLAY_URL_PREFIX}/mp_/${urlObj.origin}${location}`;
         } else if (location.startsWith("http")) {
-          newLocation = `/w/liveproxy/mp_/${location}`;
+          newLocation = `${REPLAY_URL_PREFIX}/mp_/${location}`;
         } else if (location.startsWith("//")) {
           const urlObj = new URL(origUrl);
-          newLocation = `/w/liveproxy/mp_/${urlObj.protocol.replace(
+          newLocation = `${REPLAY_URL_PREFIX}/mp_/${urlObj.protocol.replace(
             ":",
             ""
           )}:${location}`;
@@ -188,7 +193,7 @@ export async function handleProxyRequest(
           const pathParts = urlObj.pathname.split("/");
           pathParts.pop();
           const basePath = pathParts.join("/");
-          newLocation = `/w/liveproxy/mp_/${urlObj.origin}${basePath}/${location}`;
+          newLocation = `${REPLAY_URL_PREFIX}/mp_/${urlObj.origin}${basePath}/${location}`;
         }
 
         newLocation = newLocation.replace(/([^:])\/+/g, "$1/");

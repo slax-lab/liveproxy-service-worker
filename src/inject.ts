@@ -207,14 +207,11 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
       try {
         let rewrittenInput = input;
 
-        // 如果输入为空，直接使用原始fetch
         if (!input) {
           return originalFetch.call(this, input, init);
         }
 
-        // 处理字符串URL
         if (typeof input === "string") {
-          // 检查特殊协议
           if (specialProtocols.some((protocol) => input.startsWith(protocol))) {
             return originalFetch.call(this, input, init);
           }
@@ -225,13 +222,9 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
             console.error("[Fetch Interceptor] Error rewriting URL:", error);
             rewrittenInput = input;
           }
-        }
-        // 处理Request对象
-        else if (input instanceof Request) {
+        } else if (input instanceof Request) {
           try {
             const originalUrl = input.url;
-
-            // 检查特殊协议
             if (
               specialProtocols.some((protocol) =>
                 originalUrl.startsWith(protocol)
@@ -1017,7 +1010,10 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
   function overrideImport(): void {
     //@ts-ignore
     window.__slax_js_import__ = function (base: string, url: string) {
-      return import(rewriteUrl(url, "esm_"));
+      if (base) {
+        url = new URL(url, base).toString();
+      }
+      return import(/*webpackIgnore: true*/ rewriteUrl(url, "esm_"));
     };
   }
 
@@ -1220,6 +1216,44 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
         return originalMethod.apply(this, processedArgs);
       };
     });
+
+    if (TreeWalker && TreeWalker.prototype) {
+      const originalCurrentNodeDesc = Object.getOwnPropertyDescriptor(
+        TreeWalker.prototype,
+        "currentNode"
+      );
+
+      if (originalCurrentNodeDesc && originalCurrentNodeDesc.set) {
+        Object.defineProperty(TreeWalker.prototype, "currentNode", {
+          get: function () {
+            return originalCurrentNodeDesc.get!.call(this);
+          },
+          set: function (value) {
+            if (value && typeof value === "object" && value._SLAX_obj_proxy) {
+              for (const [origObj, proxyObj] of (
+                window as any
+              ).slaxEnv.objProxies.entries()) {
+                if (proxyObj === value) {
+                  value = origObj;
+                  break;
+                }
+              }
+            }
+
+            if (!(value instanceof Node)) {
+              console.error("[TreeWalker Interceptor] Invalid node:", value);
+              throw new TypeError(
+                "Failed to set the 'currentNode' property on 'TreeWalker': Failed to convert value to 'Node'."
+              );
+            }
+
+            return originalCurrentNodeDesc.set!.call(this, value);
+          },
+          enumerable: originalCurrentNodeDesc.enumerable,
+          configurable: originalCurrentNodeDesc.configurable,
+        });
+      }
+    }
   }
 
   function overrideDocumentDefaultView(): void {
@@ -1326,7 +1360,7 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
 
     overrideDocumentDefaultView();
 
-    // overrideImport();
+    overrideImport();
   }
 
   initAllInterceptors();

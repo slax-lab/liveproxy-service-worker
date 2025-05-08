@@ -107,6 +107,19 @@ ${exportCode || docCloseCode}
 }
 
 function wrapJavaScript(code: string, isModule: boolean): string {
+  if (code.indexOf("import") >= 0 && code.match(/^\s*import\s*[{"'*\w]/)) {
+    return warpESMCode(code);
+  }
+
+  if (
+    code.indexOf("export") >= 0 &&
+    code.match(
+      /^\s*export\s*((?:{[\s\w,$\n]*}[\s;]*)|(?:default|class|function|const|let|var)\b|\*)/m
+    )
+  ) {
+    return warpESMCode(code);
+  }
+
   if (isModule) {
     return warpESMCode(code);
   }
@@ -234,16 +247,13 @@ export function rewriteJS(
     }
   );
 
-  // js = js.replace(
-  //   /(?<!\.|\$)\bimport\s*\(\s*([^)]+?)\s*\)/g,
-  //   function (match, importArg) {
-  //     if (isModule) {
-  //       return `__slax_js_import__(${importArg}, import.meta.url)`;
-  //     } else {
-  //       return `__slax_js_import__(null, ${importArg})`;
-  //     }
-  //   }
-  // );
+  js = js.replace(/([^$.])\bimport\s*\(/g, function (match, prefix) {
+    if (isModule) {
+      return `${prefix}__slax_js_import__(import.meta.url, `;
+    } else {
+      return `${prefix}__slax_js_import__(null, `;
+    }
+  });
 
   if (isModule) {
     js = js.replace(
@@ -256,8 +266,8 @@ export function rewriteJS(
       ) {
         try {
           const fullUrl = parseUrl(importUrl, baseUrl);
-          isModule = true;
           const proxyUrl = `${self.location.origin}/proxy/${timestamp}esm_/${fullUrl}`;
+
           return importStmt + proxyUrl + quote;
         } catch (e) {
           console.error("ESM import rewriting error:", e);

@@ -1,7 +1,6 @@
 const bypassRegexPatterns = [
   // === public cdn ===
   /jsdelivr\.net/,
-  /cloudflare\.com/,
   /unpkg\.com/,
   /jquery\.com/,
   /googleapis\.com/,
@@ -12,7 +11,6 @@ const bypassRegexPatterns = [
   /bootstrapcdn\.com/,
   /maxcdn\.bootstrapcdn\.com/,
   /cdn\.jsdelivr\.net/,
-  /cdnjs\.cloudflare\.com/,
   /ajax\.googleapis\.com/,
   /adobedtm\.com/,
   /alicdn\.com/,
@@ -110,7 +108,6 @@ const bypassRegexPatterns = [
   /\*.githubusercontent.com/,
   /cdn\.v2ex\.com/,
 
-  /static\.cloudflareinsights\.com/,
   /cdn-cgi\/challenge-platform\/scripts\/jsd\/main\.js/,
 ];
 

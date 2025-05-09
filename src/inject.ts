@@ -48,8 +48,12 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
     }
   }
 
-  function hasDataAttributes(element: HTMLElement): boolean {
-    return element.getAttributeNames().some((name) => name.startsWith("data-"));
+  function overrideElementGetSetAttribute(): void {
+    const originalGetAttribute = Element.prototype.getAttribute;
+    Element.prototype.getAttribute = function (name) {
+      const value = originalGetAttribute.call(this, name);
+      return extractOriginalUrl(value || "");
+    };
   }
 
   function createPropertyInterceptor(
@@ -68,9 +72,6 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
         const value = originalDescriptor
           ? originalDescriptor.get!.call(this)
           : this.getAttribute(propName);
-        if (hasDataAttributes(this)) {
-          return this.getAttribute(propName) || "";
-        }
         return extractOriginalUrl(value) || "";
       },
       set: function (this: HTMLElement, value: string): void {
@@ -540,7 +541,7 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
       interceptElementSrcset(element);
     } else if (element instanceof HTMLScriptElement) {
       if (element.getAttribute("type") === "module") {
-        interceptElementAttribute(element, "src", "esm");
+        interceptElementAttribute(element, "src", "esm_");
       } else {
         interceptElementAttribute(element, "src", "js_");
       }
@@ -664,7 +665,7 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
               let mod = "mp_";
               if (element instanceof HTMLScriptElement) {
                 if (element.getAttribute("type") === "module") {
-                  mod = "esm";
+                  mod = "esm_";
                 } else {
                   mod = "js_";
                 }
@@ -1017,6 +1018,80 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
     };
   }
 
+  function overrideHistoryMethods(): void {
+    if (!window.history) return;
+
+    const originalPushState = window.history.pushState;
+    const originalReplaceState = window.history.replaceState;
+
+    const makeURLParser = (url: string, doc: Document): URL => {
+      try {
+        return new URL(url, originURL);
+      } catch (e) {
+        console.error(`Failed to parse URL: ${url}`, e);
+        return new URL(window.location.href);
+      }
+    };
+
+    window.history.pushState = function (
+      state: any,
+      title: string,
+      url?: string | URL | null
+    ): void {
+      console.log(`Intercepted pushState with URL: ${url}`);
+
+      const urlStr = url ? url.toString() : "";
+      const originalUrl = extractOriginalUrl(urlStr);
+      let rewrittenUrl = url;
+
+      if (!originalUrl || !urlStr) {
+        console.warn("[History Interceptor] Failed to extract original URL");
+        return;
+      }
+
+      if (originalUrl) {
+        const parser = makeURLParser(originalUrl, document);
+        const resolvedURL = parser.href;
+        //@ts-ignore
+        rewrittenUrl = rewriteUrl(resolvedURL);
+
+        console.log(`pushState: ${originalUrl} -> ${rewrittenUrl}`);
+      }
+
+      originalPushState.call(this, state, title, rewrittenUrl);
+    };
+
+    window.history.replaceState = function (
+      state: any,
+      title: string,
+      url?: string | URL | null
+    ): void {
+      console.log(`Intercepted replaceState with URL: ${url}`);
+      console.log(`Current location: ${window.location.href}`);
+      console.log(`Stack trace: ${new Error().stack}`);
+
+      const urlStr = url ? url.toString() : "";
+      const originalUrl = extractOriginalUrl(urlStr);
+      let rewrittenUrl = url;
+
+      if (originalUrl) {
+        const parser = makeURLParser(originalUrl, document);
+        const resolvedURL = parser.href;
+        //@ts-ignore
+        rewrittenUrl = rewriteUrl(resolvedURL);
+
+        console.log(`replaceState: ${originalUrl} -> ${rewrittenUrl}`);
+      }
+
+      if (!originalUrl || !urlStr) {
+        console.warn("[History Interceptor] Failed to extract original URL");
+        return;
+      }
+
+      originalReplaceState.call(this, state, title, rewrittenUrl);
+    };
+  }
+
   function overrideQuerySelectors(): void {
     if (!document.querySelector || !Document.prototype.querySelector) {
       return;
@@ -1323,6 +1398,9 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
         ) {
           return "esm_";
         }
+        if (el.getAttribute("src")?.endsWith(".js")) {
+          return "js_";
+        }
         return "mp_";
       }
     );
@@ -1361,6 +1439,10 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
     overrideDocumentDefaultView();
 
     overrideImport();
+
+    overrideHistoryMethods();
+
+    overrideElementGetSetAttribute();
   }
 
   initAllInterceptors();

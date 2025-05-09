@@ -5,7 +5,6 @@ import {
   REPLAY_URL_PREFIX_REGEXP,
   REPLAY_URL_PREFIX_REGEXP_STR,
 } from "./config";
-import { isCdnUrl } from "./cdn";
 
 export function processResponseHeaders(headers: Headers): Headers {
   const newHeaders = new Headers(headers);
@@ -72,10 +71,7 @@ export async function handleProxyRequest(
     });
   }
 
-  let proxyUrl = origUrl;
-  if (!isCdnUrl(origUrl) || ["im_", "esm_", "js_", "cs_"].includes(mod)) {
-    proxyUrl = proxyPrefix + origUrl;
-  }
+  const proxyUrl = proxyPrefix + origUrl;
 
   const headers = new Headers();
   for (const [key, value] of request.headers.entries()) {

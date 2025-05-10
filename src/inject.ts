@@ -1133,7 +1133,6 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
     const querySelector = function (this: any, query: string): Element | null {
       const originalThis = getOriginalObject(this);
       const result = orig_QS.call(originalThis, rewriteQuery(query));
-      console.log("querySelector", query, result);
       return result;
     };
 
@@ -1143,7 +1142,6 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
     ): NodeListOf<Element> {
       const originalThis = getOriginalObject(this);
       const result = orig_QSA.call(originalThis, rewriteQuery(query));
-      console.log("querySelectorAll", query, result);
       return result;
     };
 

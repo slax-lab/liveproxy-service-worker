@@ -444,7 +444,7 @@ export function completeHtmlRewrite(
 
   html = html.replace(
     /<script([^>]*)>([\s\S]*?)<\/script>/gi,
-    function (match, attrs, content) {
+    function (match: string, attrs: string, content: string) {
       if (
         attrs.includes("application/ld+json") ||
         attrs.includes("application/json")
@@ -460,7 +460,12 @@ export function completeHtmlRewrite(
             }
 
             const fullUrl = parseUrl(src, baseUrl);
-            const isModule = attrs.includes("module");
+
+            const isModule =
+              attrs.includes('type="module"') ||
+              attrs.includes("type='module'") ||
+              attrs.includes("type=module");
+
             const mod = isModule ? "esm_" : "js_";
 
             const proxyUrl = `${self.location.origin}/proxy/${timestamp}${mod}/${fullUrl}`;

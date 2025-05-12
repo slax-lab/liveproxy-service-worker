@@ -84,12 +84,11 @@ export async function handleProxyRequest(
     headers.set(key, value);
   }
 
-  const refererUrl = new URL(request.referrer || request.url);
   if (
-    refererUrl.pathname.includes("/proxy/") ||
-    refererUrl.pathname.includes(REPLAY_URL_PREFIX)
+    request.url.includes("/proxy/") ||
+    request.url.includes(REPLAY_URL_PREFIX)
   ) {
-    const refMatch = refererUrl.pathname.match(REPLAY_URL_PREFIX_REGEXP);
+    const refMatch = request.url.match(REPLAY_URL_PREFIX_REGEXP);
     if (refMatch) {
       let refOrigUrl;
       if (refMatch[4]) {
@@ -108,13 +107,10 @@ export async function handleProxyRequest(
 
       if (refOrigUrl) {
         headers.set("X-Proxy-Referer", refOrigUrl);
-        const currentOrigin = self.location.origin || "";
-        const proxyReferer = `${currentOrigin}${REPLAY_URL_PREFIX}/mp_/${refOrigUrl}`;
-        headers.set("Referer", proxyReferer);
       }
     }
   } else {
-    headers.set("Referer", request.headers.get("Referer") || "");
+    headers.set("X-Proxy-Referer", request.url);
   }
 
   headers.set("X-Proxy-User-Agent", request.headers.get("User-Agent")!);

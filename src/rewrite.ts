@@ -537,6 +537,13 @@ export function completeHtmlRewrite(
   );
 
   html = html.replace(
+    /<style[^>]*>[\s\S]*?url\(\s*(['"]?)([^'"()]+)\1\s*\)[\s\S]*?<\/style>/g,
+    function (match: string, quote1: string, url: string) {
+      return rewriteCSS(match, baseUrl, timestamp);
+    }
+  );
+
+  html = html.replace(
     /<a[^>]+href\s*=\s*["']([^"']+)["'][^>]*>/gi,
     function (match: string, href: string) {
       if (

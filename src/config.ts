@@ -1,5 +1,3 @@
-export const disablePostHost = [/mp\.weixin\.qq\.com/];
-
 export const proxyPrefix = "https://wabac-test.slax.dev/proxy/";
 
 export let REPLAY_URL_PREFIX;

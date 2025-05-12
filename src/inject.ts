@@ -470,17 +470,14 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
         url: string | URL,
         data?: BodyInit | null
       ): boolean {
-        let rewrittenUrl = url;
-
-        if (typeof url === "string") {
-          rewrittenUrl = rewriteUrl(url, "mp_");
-          console.log(
-            `[Beacon Interceptor] Rewrote sendBeacon URL: ${url} -> ${rewrittenUrl}`
-          );
-        }
-
-        console.log(`[Beacon Interceptor] sendBeacon to ${rewrittenUrl}`, data);
-        return originalSendBeacon.call(navigator, rewrittenUrl, data);
+        // if (typeof url === "string") {
+        //   rewrittenUrl = rewriteUrl(url, "mp_");
+        //   console.log(
+        //     `[Beacon Interceptor] Rewrote sendBeacon URL: ${url} -> ${rewrittenUrl}`
+        //   );
+        // }
+        // console.log(`[Beacon Interceptor] sendBeacon to ${rewrittenUrl}`, data);
+        return originalSendBeacon.call(navigator, url, data);
       };
     }
   }

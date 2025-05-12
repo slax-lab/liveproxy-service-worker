@@ -447,7 +447,8 @@ export function completeHtmlRewrite(
     function (match: string, attrs: string, content: string) {
       if (
         attrs.includes("application/ld+json") ||
-        attrs.includes("application/json")
+        attrs.includes("application/json") ||
+        attrs.includes("text/json")
       )
         return match;
 

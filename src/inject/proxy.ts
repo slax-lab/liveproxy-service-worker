@@ -12,9 +12,11 @@ export class SlaxEnv {
 
     this.initLocation();
 
-    this.setupDefinePropertyInterceptor();
     this.initWindowProxy();
     this.initDocumentProxy();
+    this.initIntersectionObsOverride();
+
+    this.setupDefinePropertyInterceptor();
   }
 
   private initLocation(): void {
@@ -25,8 +27,40 @@ export class SlaxEnv {
     }
   }
 
+  private initIntersectionObsOverride(): void {
+    //@ts-ignore
+    var ori_obs = this.window.IntersectionObserver;
+    const self = this;
+
+    //@ts-ignore
+    this.window.IntersectionObserver = (function (objs: any) {
+      return function (callback: any, options: any) {
+        if (options && options.root) {
+          options.root = self.proxyToObj(options.root);
+        }
+
+        return new objs(callback, options);
+      };
+      //@ts-ignore
+    })(this.window.IntersectionObserver);
+
+    //@ts-ignore
+    this.window.IntersectionObserver.prototype = ori_obs.prototype;
+
+    //@ts-ignore
+    Object.defineProperty(
+      //@ts-ignore
+      this.window.IntersectionObserver.prototype,
+      "constructor",
+      {
+        //@ts-ignore
+        value: this.window.IntersectionObserver,
+      }
+    );
+  }
+
   private initWindowProxy(): void {
-    const wombat = this;
+    const self = this;
     const windowOwnProps = this.getAllOwnProps(this.window);
     const funCache = new Map<string, any>();
     this.funCache.set(this.window, funCache);
@@ -34,7 +68,7 @@ export class SlaxEnv {
     const windowProxy = new (this.window as any).Proxy(this.window, {
       get: (target: any, prop: string | symbol) => {
         if (prop === "location") {
-          return wombat.overrides.get("location") || target.location;
+          return self.overrides.get("location") || target.location;
         }
 
         if (prop === "defaultView") {
@@ -50,7 +84,7 @@ export class SlaxEnv {
       },
       set: (target: any, prop: string | symbol, value: any) => {
         if (prop === "location") {
-          const loc = wombat.overrides.get("location");
+          const loc = this.overrides.get("location");
           if (loc) {
             loc.href = value;
             return true;
@@ -91,7 +125,7 @@ export class SlaxEnv {
   }
 
   private initDocumentProxy(): void {
-    const wombat = this;
+    const self = this;
     const documentOwnProps = this.getAllOwnProps(this.window.document);
     const funCache = new Map<string, any>();
     this.funCache.set(this.window.document, funCache);
@@ -99,7 +133,7 @@ export class SlaxEnv {
     const documentProxy = new (this.window as any).Proxy(this.window.document, {
       get: (target: any, prop: string | symbol) => {
         if (prop === "location") {
-          return wombat.overrides.get("location") || target.location;
+          return self.overrides.get("location") || target.location;
         }
 
         if (prop === "defaultView") {
@@ -115,7 +149,7 @@ export class SlaxEnv {
       },
       set: (target: any, prop: string | symbol, value: any) => {
         if (prop === "location") {
-          const loc = wombat.overrides.get("location");
+          const loc = self.overrides.get("location");
           if (loc) {
             loc.href = value;
             return true;

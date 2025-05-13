@@ -1,6 +1,6 @@
 {
   "name": "@slax-lab/liveproxy-sw",
-  "version": "1.0.2-dev.8",
+  "version": "1.0.2-dev.9",
   "description": "liveproxy service worker",
   "main": "index.js",
   "type": "module",

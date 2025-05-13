@@ -106,6 +106,49 @@ ${exportCode || docCloseCode}
   }`;
 }
 
+function rewriteJSImport(code: string, isModule: boolean): string {
+  let protectedCode = code;
+  const classImportMethodRegex = /\bimport\s*\(\s*([^)]*)\s*\)\s*\{/g;
+  const protectedTokens: string[] = [];
+
+  protectedCode = protectedCode.replace(
+    classImportMethodRegex,
+    function (match) {
+      const token = `__PROTECTED_CLASS_METHOD_${protectedTokens.length}__`;
+      protectedTokens.push(match);
+      return token;
+    }
+  );
+
+  protectedCode = protectedCode.replace(
+    /(\W)import\s*\(/g,
+    function (match, prefix) {
+      if (["}", ")", "]", "."].includes(prefix)) {
+        return match;
+      }
+
+      if (/[\w$]/.test(prefix)) {
+        return match;
+      }
+
+      if (isModule) {
+        return `${prefix}__slax_js_import__(import.meta.url, `;
+      } else {
+        return `${prefix}__slax_js_import__(null, `;
+      }
+    }
+  );
+
+  protectedTokens.forEach((token, index) => {
+    protectedCode = protectedCode.replace(
+      `__PROTECTED_CLASS_METHOD_${index}__`,
+      token
+    );
+  });
+
+  return protectedCode;
+}
+
 function wrapJavaScript(code: string, isModule: boolean): string {
   if (code.indexOf("import") >= 0 && code.match(/^\s*import\s*[{"'*\w]/)) {
     return warpESMCode(code);
@@ -247,13 +290,7 @@ export function rewriteJS(
     }
   );
 
-  js = js.replace(/([^$.])\bimport\s*\(/g, function (match, prefix) {
-    if (isModule) {
-      return `${prefix}__slax_js_import__(import.meta.url, `;
-    } else {
-      return `${prefix}__slax_js_import__(null, `;
-    }
-  });
+  js = rewriteJSImport(js, isModule);
 
   if (isModule) {
     js = js.replace(
@@ -421,12 +458,21 @@ export function completeHtmlRewrite(
 
       let mod = "mp_";
 
-      if (
+      const isScript =
+        href.endsWith(".js") ||
+        href.endsWith(".mjs") ||
+        match.includes(`as="script"`) ||
+        match.includes(`as='script'`) ||
+        match.includes(`as=script`);
+
+      const isEsModule =
         match.toLowerCase().includes('rel="modulepreload"') ||
         match.toLowerCase().includes("rel='modulepreload'") ||
-        match.toLowerCase().includes("rel=modulepreload")
-      ) {
-        mod = "esm_";
+        match.toLowerCase().includes("rel=modulepreload") ||
+        href.endsWith(".mjs");
+
+      if (isScript) {
+        mod = isEsModule ? "esm_" : "js_";
       }
 
       if (
@@ -452,6 +498,11 @@ export function completeHtmlRewrite(
       )
         return match;
 
+      let isModule =
+        attrs.includes('type="module"') ||
+        attrs.includes("type='module'") ||
+        attrs.includes("type=module");
+
       if (attrs.includes(" src=")) {
         const processedAttrs = attrs.replace(
           /src\s*=\s*["']([^"']+)["']/gi,
@@ -461,11 +512,6 @@ export function completeHtmlRewrite(
             }
 
             const fullUrl = parseUrl(src, baseUrl);
-
-            const isModule =
-              attrs.includes('type="module"') ||
-              attrs.includes("type='module'") ||
-              attrs.includes("type=module");
 
             const mod = isModule ? "esm_" : "js_";
 
@@ -480,7 +526,7 @@ export function completeHtmlRewrite(
         content,
         baseUrl,
         timestamp,
-        attrs.includes("module")
+        isModule
       )}</script>`;
     }
   );

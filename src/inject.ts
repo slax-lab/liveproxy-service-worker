@@ -16,6 +16,7 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
 
   function rewriteUrl(url: string, mod: string): string {
     if (!url || typeof url !== "string") return url;
+    if (url.startsWith(proxyURL)) return url;
 
     try {
       const specialProtocols = [
@@ -1025,9 +1026,6 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
   function overrideImport(): void {
     //@ts-ignore
     window.__slax_js_import__ = function (base: string, url: string) {
-      if (base) {
-        url = new URL(url, base).toString();
-      }
       return import(/*webpackIgnore: true*/ rewriteUrl(url, "esm_"));
     };
   }
@@ -1054,6 +1052,7 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
     ): void {
       console.log(`Intercepted pushState with URL: ${url}`);
 
+      //@ts-ignore
       const urlStr = url ? url.toString() : "";
       const originalUrl = extractOriginalUrl(urlStr);
       let rewrittenUrl = url;

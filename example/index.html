@@ -1,0 +1,120 @@
+<!doctype html>
+<html>
+  <head>
+    <style>
+      html {
+        width: 100%;
+        height: 100%;
+        display: flex;
+      }
+      body {
+        width: 100%;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .nav-container {
+        padding: 10px;
+        background-color: #f5f5f5;
+        border-bottom: 1px solid #ddd;
+        display: flex;
+      }
+      .url-input {
+        flex: 1;
+        padding: 8px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        margin-right: 10px;
+      }
+      .nav-button {
+        padding: 8px 15px;
+        background-color: #4285f4;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      .nav-button:hover {
+        background-color: #3367d6;
+      }
+      iframe {
+        width: 100%;
+        height: 100%;
+        border: none;
+      }
+    </style>
+    <script src="./loadwabac.js"></script>
+    <script>
+      let wabacProxy;
+
+      function navigateToUrl(url) {
+        if (url) {
+          const iframe = document.querySelector("#content");
+          iframe.src = `/w/${wabacProxy.collName}/mp_/${url}`;
+          wabacProxy.url = url;
+        }
+      }
+
+      function initWabacProxy() {
+        wabacProxy = new WabacLiveProxy();
+        console.log("initWabacProxy", wabacProxy);
+        wabacProxy.init();
+        console.log("initWabacProxy done");
+      }
+
+      function setupEventListeners() {
+        const urlInput = document.getElementById("url-input");
+        const navButton = document.getElementById("nav-button");
+
+        if (navButton) {
+          navButton.removeEventListener("click", function () {
+            navigateToUrl(urlInput.value);
+          });
+
+          navButton.onclick = function () {
+            navigateToUrl(urlInput.value);
+          };
+        } else {
+          console.error("导航按钮未找到");
+        }
+
+        if (urlInput) {
+          urlInput.addEventListener("keypress", function (e) {
+            if (e.key === "Enter") {
+              navigateToUrl(urlInput.value);
+            }
+          });
+        } else {
+          console.error("URL输入框未找到");
+        }
+      }
+
+      document.addEventListener("DOMContentLoaded", function () {
+        initWabacProxy();
+        setTimeout(setupEventListeners, 100);
+      });
+
+      window.onload = function () {
+        if (!wabacProxy) {
+          initWabacProxy();
+        }
+        setupEventListeners();
+      };
+    </script>
+  </head>
+  <body>
+    <div class="nav-container">
+      <input
+        type="text"
+        id="url-input"
+        class="url-input"
+        placeholder="输入网址..."
+      />
+      <button id="nav-button" class="nav-button">导航</button>
+    </div>
+    <iframe
+      sandbox="allow-downloads allow-modals allow-orientation-lock allow-pointer-lock allow-popups allow-popups-to-escape-sandbox allow-presentation allow-scripts allow-same-origin allow-forms"
+      id="content"
+    ></iframe>
+  </body>
+</html>

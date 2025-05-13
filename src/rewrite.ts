@@ -423,26 +423,26 @@ export function completeHtmlRewrite(
     }
   );
 
-  html = html.replace(
-    /srcset\s*=\s*["']([^"']+)["']/gi,
-    function (match: string, srcset: string) {
-      if (!srcset) return match;
+  // html = html.replace(
+  //   /srcset\s*=\s*["']([^"']+)["']/gi,
+  //   function (match: string, srcset: string) {
+  //     if (!srcset) return match;
 
-      const currentOrigin = self.location.origin;
+  //     const currentOrigin = self.location.origin;
 
-      const parts = srcset.split(",").map((part) => {
-        const [url, ...rest] = part.trim().split(/\s+/);
-        if (url && !url.startsWith("data:")) {
-          const fullUrl = parseUrl(url, baseUrl);
-          const proxyUrl = `${currentOrigin}${REPLAY_URL_PREFIX}/mp_/${fullUrl}`;
-          return [proxyUrl, ...rest].join(" ");
-        }
-        return part;
-      });
+  //     const parts = srcset.split(",").map((part) => {
+  //       const [url, ...rest] = part.trim().split(/\s+/);
+  //       if (url && !url.startsWith("data:")) {
+  //         const fullUrl = parseUrl(url, baseUrl);
+  //         const proxyUrl = `${currentOrigin}${REPLAY_URL_PREFIX}/mp_/${fullUrl}`;
+  //         return [proxyUrl, ...rest].join(" ");
+  //       }
+  //       return part;
+  //     });
 
-      return `srcset="${parts.join(", ")}"`;
-    }
-  );
+  //     return `srcset="${parts.join(", ")}"`;
+  //   }
+  // );
 
   html = html.replace(
     /<link[^>]+href\s*=\s*["']([^"']+)["'][^>]*>/gi,
@@ -557,18 +557,18 @@ export function completeHtmlRewrite(
     }
   );
 
-  html = html.replace(
-    /<source[^>]+src\s*=\s*["']([^"']+)["'][^>]*>/gi,
-    function (match: string, src: string) {
-      if (src.startsWith("data:") || src.startsWith("#")) {
-        return match;
-      }
+  // html = html.replace(
+  //   /<source[^>]+src\s*=\s*["']([^"']+)["'][^>]*>/gi,
+  //   function (match: string, src: string) {
+  //     if (src.startsWith("data:") || src.startsWith("#")) {
+  //       return match;
+  //     }
 
-      const fullUrl = parseUrl(src, baseUrl);
-      const proxyUrl = `${self.location.origin}/proxy/${timestamp}mp_/${fullUrl}`;
-      return match.replace(src, proxyUrl);
-    }
-  );
+  //     const fullUrl = parseUrl(src, baseUrl);
+  //     const proxyUrl = `${self.location.origin}/proxy/${timestamp}mp_/${fullUrl}`;
+  //     return match.replace(src, proxyUrl);
+  //   }
+  // );
 
   html = html.replace(
     /style\s*=\s*["'][^"']*background(-image)?\s*:\s*url\(\s*['"]?([^'"\)]+)['"]?\s*\)[^"']*["']/gi,

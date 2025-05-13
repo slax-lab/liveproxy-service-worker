@@ -11,7 +11,6 @@ export class SlaxEnv {
     window._SLAX_obj_proxy = {};
 
     this.initLocation();
-
     this.initWindowProxy();
     this.initDocumentProxy();
     this.initIntersectionObsOverride();
@@ -21,10 +20,10 @@ export class SlaxEnv {
 
   private initLocation(): void {
     //@ts-ignore
-    const slaxLocation = this.window._slaxLocation || null;
-    if (slaxLocation) {
-      this.overrides.set("location", slaxLocation);
-    }
+    const slaxLocation = this.window._slaxLocation;
+    this.overrides.set("location", slaxLocation);
+    //@ts-ignore
+    this.window._SLAX_obj_proxy.location = slaxLocation;
   }
 
   private initIntersectionObsOverride(): void {

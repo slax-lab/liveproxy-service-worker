@@ -48,6 +48,23 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
     }
   }
 
+  function overrideInsertAdjacentHTML(): void {
+    const originalInsertAdjacentHTML = Element.prototype.insertAdjacentHTML;
+    Element.prototype.insertAdjacentHTML = function (position, html) {
+      const rewrittenHTML = rewriteHTMLContent(html);
+      return originalInsertAdjacentHTML.call(this, position, rewrittenHTML);
+    };
+    // const originInsertAdjacentElement = Element.prototype.insertAdjacentElement;
+    // Element.prototype.insertAdjacentElement = function (position, element) {
+    //   const rewrittenElement = rewriteElement(element);
+    //   return originalInsertAdjacentElement.call(
+    //     this,
+    //     position,
+    //     rewrittenElement
+    //   );
+    // };
+  }
+
   function overrideElementGetSetAttribute(): void {
     const originalGetAttribute = Element.prototype.getAttribute;
     Element.prototype.getAttribute = function (name) {
@@ -1438,6 +1455,8 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
     overrideHistoryMethods();
 
     overrideElementGetSetAttribute();
+
+    overrideInsertAdjacentHTML();
   }
 
   initAllInterceptors();

@@ -14,6 +14,10 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
   if ((window as any).__URL_REWRITER_INITIALIZED__) return;
   (window as any).__URL_REWRITER_INITIALIZED__ = true;
 
+  const regex = {
+    srcsetRe: /\s*(\S*\s+[\d.]+[wx]),|(?:\s*,(?:\s+|(?=https?:)))/
+  }
+
   function rewriteUrl(url: string, mod: string): string {
     if (!url || typeof url !== "string") return url;
     if (url.startsWith(proxyURL)) return url;
@@ -107,36 +111,39 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
     });
   }
 
-  // function createSrcsetInterceptor(prototype: any): void {
-  //   const srcsetPropName = "_originalSrcset";
+  function createSrcsetInterceptor(prototype: any): void {
+    const srcsetPropName = "_originalSrcset";
 
-  //   Object.defineProperty(prototype, "srcset", {
-  //     get: function (this: HTMLElement): string {
-  //       return (this as any)[srcsetPropName] || "";
-  //     },
-  //     set: function (this: HTMLElement, value: string): void {
-  //       (this as any)[srcsetPropName] = value;
+    Object.defineProperty(prototype, "srcset", {
+      get: function (this: HTMLElement): string {
+        return (this as any)[srcsetPropName] || "";
+      },
+      set: function (this: HTMLElement, value: string): void {
+        (this as any)[srcsetPropName] = value;
 
-  //       if (!value) {
-  //         this.setAttribute("srcset", "");
-  //         return;
-  //       }
+        if (!value) {
+          this.setAttribute("srcset", "");
+          return;
+        }
 
-  //       const parts = value.split(",").map((part) => {
-  //         const [url, ...descriptors] = part.trim().split(/\s+/);
-  //         if (url && !url.startsWith("data:")) {
-  //           const rewrittenUrl = rewriteUrl(url, "mp_");
-  //           return [rewrittenUrl, ...descriptors].join(" ");
-  //         }
-  //         return part;
-  //       });
+        const parts = value.split(regex.srcsetRe).map((part) => {
+          const [url, ...descriptors] = part.trim().split(/\s+/);
+          if (url && !url.startsWith("data:")) {
+            const rewrittenUrl = rewriteUrl(url, "mp_");
+            return [rewrittenUrl, ...descriptors].join(" ");
+          }
+          return part;
+        });
 
-  //       this.setAttribute("srcset", parts.join(", "));
-  //     },
-  //     enumerable: true,
-  //     configurable: true,
-  //   });
-  // }
+
+        console.log('before value: ', value)
+        console.log('after value: ', parts.join(", "))
+        this.setAttribute("srcset", parts.join(", "));
+      },
+      enumerable: true,
+      configurable: true,
+    });
+  }
 
   function rewriteCssUrls(value: string): string {
     if (!value || typeof value !== "string" || !value.includes("url(")) {
@@ -552,8 +559,8 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
     } else if (element instanceof HTMLAudioElement) {
       interceptElementAttribute(element, "src", "mp_");
     } else if (element instanceof HTMLSourceElement) {
-      // interceptElementAttribute(element, "src", "mp_");
-      // interceptElementSrcset(element);
+      interceptElementAttribute(element, "src", "mp_");
+      interceptElementSrcset(element);
     } else if (element instanceof HTMLScriptElement) {
       if (element.getAttribute("type") === "module") {
         interceptElementAttribute(element, "src", "esm_");
@@ -624,7 +631,7 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
     const originalSrcset = element.srcset;
 
     if (originalSrcset) {
-      const parts = originalSrcset.split(",").map((part) => {
+      const parts = originalSrcset.split(regex.srcsetRe).map((part) => {
         const [url, ...descriptors] = part.trim().split(/\s+/);
         if (url && !url.startsWith("data:")) {
           const rewrittenUrl = rewriteUrl(url, "mp_");
@@ -697,20 +704,20 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
           }
         });
 
-        // if (element.hasAttribute("srcset")) {
-        //   const srcset = element.getAttribute("srcset");
-        //   if (srcset) {
-        //     const parts = srcset.split(",").map((part) => {
-        //       const [url, ...descriptors] = part.trim().split(/\s+/);
-        //       if (url && !url.startsWith("data:")) {
-        //         const rewrittenUrl = rewriteUrl(url, "mp_");
-        //         return [rewrittenUrl, ...descriptors].join(" ");
-        //       }
-        //       return part;
-        //     });
-        //     element.setAttribute("srcset", parts.join(", "));
-        //   }
-        // }
+        if (element.hasAttribute("srcset")) {
+          const srcset = element.getAttribute("srcset");
+          if (srcset) {
+            const parts = srcset.split(regex.srcsetRe).map((part) => {
+              const [url, ...descriptors] = part.trim().split(/\s+/);
+              if (url && !url.startsWith("data:")) {
+                const rewrittenUrl = rewriteUrl(url, "mp_");
+                return [rewrittenUrl, ...descriptors].join(" ");
+              }
+              return part;
+            });
+            element.setAttribute("srcset", parts.join(", "));
+          }
+        }
 
         if (element.hasAttribute("style")) {
           const style = element.getAttribute("style");
@@ -988,18 +995,18 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
           return originalSetAttribute.call(this, name, rewrittenValue);
         }
 
-        // if (name === "srcset" && typeof value === "string") {
-        //   const parts = value.split(",").map((part) => {
-        //     const [url, ...descriptors] = part.trim().split(/\s+/);
-        //     if (url && !url.startsWith("data:")) {
-        //       const rewrittenUrl = rewriteUrl(url, "mp_");
-        //       return [rewrittenUrl, ...descriptors].join(" ");
-        //     }
-        //     return part;
-        //   });
+        if (name === "srcset" && typeof value === "string") {
+          const parts = value.split(regex.srcsetRe).map((part) => {
+            const [url, ...descriptors] = part.trim().split(/\s+/);
+            if (url && !url.startsWith("data:")) {
+              const rewrittenUrl = rewriteUrl(url, "mp_");
+              return [rewrittenUrl, ...descriptors].join(" ");
+            }
+            return part;
+          });
 
-        //   return originalSetAttribute.call(this, name, parts.join(", "));
-        // }
+          return originalSetAttribute.call(this, name, parts.join(", "));
+        }
 
         if (
           name === "style" &&
@@ -1406,8 +1413,8 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
       }
     );
 
-    // createSrcsetInterceptor(HTMLImageElement.prototype);
-    // createSrcsetInterceptor(HTMLSourceElement.prototype);
+    createSrcsetInterceptor(HTMLImageElement.prototype);
+    createSrcsetInterceptor(HTMLSourceElement.prototype);
 
     createPropertyInterceptor(HTMLFormElement.prototype, "action", "mp_");
   }

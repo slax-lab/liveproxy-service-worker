@@ -734,10 +734,8 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
         get: function () {
           return originalInnerHTMLDescriptor.get!.call(this);
         },
-        set: function (html) {
-          const rewrittenHTML = rewriteHTMLContent(html);
-          originalInnerHTMLDescriptor.set!.call(this, rewrittenHTML);
-
+        set: function (html: string) {
+          originalInnerHTMLDescriptor.set!.call(this, html);
           if (this instanceof HTMLElement) {
             Array.from(this.querySelectorAll("*")).forEach((element) => {
               if (element instanceof HTMLElement) {

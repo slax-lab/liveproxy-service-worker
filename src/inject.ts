@@ -1048,8 +1048,6 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
       title: string,
       url?: string | URL | null
     ): void {
-      console.log(`Intercepted pushState with URL: ${url}`);
-
       //@ts-ignore
       const urlStr = url ? url.toString() : "";
       const originalUrl = extractOriginalUrl(urlStr);
@@ -1077,10 +1075,6 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
       title: string,
       url?: string | URL | null
     ): void {
-      console.log(`Intercepted replaceState with URL: ${url}`);
-      console.log(`Current location: ${window.location.href}`);
-      console.log(`Stack trace: ${new Error().stack}`);
-
       const urlStr = url ? url.toString() : "";
       const originalUrl = extractOriginalUrl(urlStr);
       let rewrittenUrl = url;
@@ -1090,8 +1084,6 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
         const resolvedURL = parser.href;
         //@ts-ignore
         rewrittenUrl = rewriteUrl(resolvedURL);
-
-        console.log(`replaceState: ${originalUrl} -> ${rewrittenUrl}`);
       }
 
       if (!originalUrl || !urlStr) {

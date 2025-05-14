@@ -295,21 +295,34 @@ export class SlaxEnv {
         }
         return cachedFn.boundFn;
       }
+
+      if (this.isWrappableConstructor(propStr)) {
+        return this.wrapDOMConstructor(value);
+      }
     }
 
     if (type === "object" && value && value._SLAX_obj_proxy) {
       return value._SLAX_obj_proxy;
     }
 
-    if (
-      (type === "function" && /^HTML.*Element$/.test(propStr)) ||
-      propStr === "MutationObserver" ||
-      propStr === "IntersectionObserver"
-    ) {
-      return this.wrapDOMConstructor(value);
+    return value;
+  }
+
+  private isWrappableConstructor(propStr: string): boolean {
+    if (/^HTML.*Element$/.test(propStr)) {
+      return true;
     }
 
-    return value;
+    const wrappableConstructors = [
+      "MutationObserver",
+      "IntersectionObserver",
+      "XMLHttpRequest",
+      "Image",
+      "Option",
+      "Audio",
+    ];
+
+    return wrappableConstructors.includes(propStr);
   }
 
   private needsArgumentProxyConversion(obj: any, methodName: string): boolean {

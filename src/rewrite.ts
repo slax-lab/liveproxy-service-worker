@@ -503,8 +503,10 @@ export function completeHtmlRewrite(
         attrs.includes("type='module'") ||
         attrs.includes("type=module");
 
-      if (attrs.includes(" src=")) {
-        const processedAttrs = attrs.replace(
+      let processedAttrs = attrs.replace(/\s+integrity=["'][^"']+["']/gi, "");
+
+      if (processedAttrs.includes(" src=")) {
+        processedAttrs = processedAttrs.replace(
           /src\s*=\s*["']([^"']+)["']/gi,
           function (srcMatch: string, src: string) {
             if (src.startsWith("#") || src.startsWith("data:")) {
@@ -522,7 +524,7 @@ export function completeHtmlRewrite(
         return `<script${processedAttrs}>${content}</script>`;
       }
 
-      return `<script${attrs}>${rewriteJS(
+      return `<script${processedAttrs}>${rewriteJS(
         content,
         baseUrl,
         timestamp,

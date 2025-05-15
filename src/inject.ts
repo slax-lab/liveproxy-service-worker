@@ -555,6 +555,10 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
       // interceptElementAttribute(element, "src", "mp_");
       // interceptElementSrcset(element);
     } else if (element instanceof HTMLScriptElement) {
+      if (element.hasAttribute("integrity")) {
+        element.removeAttribute("integrity");
+      }
+
       if (element.getAttribute("type") === "module") {
         interceptElementAttribute(element, "src", "esm_");
       } else {
@@ -672,6 +676,13 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
     const elements = doc.querySelectorAll("*");
     elements.forEach((element) => {
       if (element instanceof HTMLElement) {
+        if (
+          element instanceof HTMLScriptElement &&
+          element.hasAttribute("integrity")
+        ) {
+          element.removeAttribute("integrity");
+        }
+
         const urlAttributes = ["src", "href", "action", "data-src"];
         urlAttributes.forEach((attr) => {
           if (element.hasAttribute(attr)) {
@@ -968,6 +979,10 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
       value: string
     ): void {
       try {
+        if (name === "integrity" && this instanceof HTMLScriptElement) {
+          return;
+        }
+
         const urlAttributes = ["src", "href", "action", "data-src"];
         if (urlAttributes.includes(name) && typeof value === "string") {
           let mod = "mp_";
@@ -987,19 +1002,6 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
           const rewrittenValue = rewriteUrl(value, mod);
           return originalSetAttribute.call(this, name, rewrittenValue);
         }
-
-        // if (name === "srcset" && typeof value === "string") {
-        //   const parts = value.split(",").map((part) => {
-        //     const [url, ...descriptors] = part.trim().split(/\s+/);
-        //     if (url && !url.startsWith("data:")) {
-        //       const rewrittenUrl = rewriteUrl(url, "mp_");
-        //       return [rewrittenUrl, ...descriptors].join(" ");
-        //     }
-        //     return part;
-        //   });
-
-        //   return originalSetAttribute.call(this, name, parts.join(", "));
-        // }
 
         if (
           name === "style" &&

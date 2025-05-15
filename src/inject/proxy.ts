@@ -390,8 +390,14 @@ export class SlaxEnv {
   private wrapDOMConstructor(origCtor: Function): Function {
     const proxyThis = this;
 
+    const ctorName = origCtor.name;
+
     function wrappedConstructor(this: any, ...args: any[]): any {
       if (!(this instanceof wrappedConstructor)) {
+        return new (origCtor as any)(...args);
+      }
+
+      if (ctorName === "XMLHttpRequest") {
         return new (origCtor as any)(...args);
       }
 

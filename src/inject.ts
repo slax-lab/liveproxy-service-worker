@@ -55,15 +55,6 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
       const rewrittenHTML = rewriteHTMLContent(html);
       return originalInsertAdjacentHTML.call(this, position, rewrittenHTML);
     };
-    // const originInsertAdjacentElement = Element.prototype.insertAdjacentElement;
-    // Element.prototype.insertAdjacentElement = function (position, element) {
-    //   const rewrittenElement = rewriteElement(element);
-    //   return originalInsertAdjacentElement.call(
-    //     this,
-    //     position,
-    //     rewrittenElement
-    //   );
-    // };
   }
 
   function overrideElementGetSetAttribute(): void {
@@ -106,37 +97,6 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
       configurable: true,
     });
   }
-
-  // function createSrcsetInterceptor(prototype: any): void {
-  //   const srcsetPropName = "_originalSrcset";
-
-  //   Object.defineProperty(prototype, "srcset", {
-  //     get: function (this: HTMLElement): string {
-  //       return (this as any)[srcsetPropName] || "";
-  //     },
-  //     set: function (this: HTMLElement, value: string): void {
-  //       (this as any)[srcsetPropName] = value;
-
-  //       if (!value) {
-  //         this.setAttribute("srcset", "");
-  //         return;
-  //       }
-
-  //       const parts = value.split(",").map((part) => {
-  //         const [url, ...descriptors] = part.trim().split(/\s+/);
-  //         if (url && !url.startsWith("data:")) {
-  //           const rewrittenUrl = rewriteUrl(url, "mp_");
-  //           return [rewrittenUrl, ...descriptors].join(" ");
-  //         }
-  //         return part;
-  //       });
-
-  //       this.setAttribute("srcset", parts.join(", "));
-  //     },
-  //     enumerable: true,
-  //     configurable: true,
-  //   });
-  // }
 
   function rewriteCssUrls(value: string): string {
     if (!value || typeof value !== "string" || !value.includes("url(")) {
@@ -309,7 +269,6 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
           );
         }
 
-        // 重写 URL
         const rewrittenUrl = rewriteUrl(url, "mp_");
         return originalOpen.call(
           this,
@@ -334,7 +293,6 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
   }
 
   function overrideWorkers(): void {
-    // Web Worker拦截
     const originalWorker = window.Worker;
     //@ts-ignore
     window.Worker = function (
@@ -488,13 +446,6 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
         url: string | URL,
         data?: BodyInit | null
       ): boolean {
-        // if (typeof url === "string") {
-        //   rewrittenUrl = rewriteUrl(url, "mp_");
-        //   console.log(
-        //     `[Beacon Interceptor] Rewrote sendBeacon URL: ${url} -> ${rewrittenUrl}`
-        //   );
-        // }
-        // console.log(`[Beacon Interceptor] sendBeacon to ${rewrittenUrl}`, data);
         return originalSendBeacon.call(navigator, url, data);
       };
     }
@@ -616,7 +567,7 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
     element.setAttribute = function (name: string, value: string): void {
       if (name === attributeName) {
         const rewrittenValue = rewriteUrl(value, mod);
-        return originalSetAttribute.call(this, name, value);
+        return originalSetAttribute.call(this, name, rewrittenValue);
       }
       return originalSetAttribute.call(this, name, value);
     };
@@ -708,21 +659,6 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
           }
         });
 
-        // if (element.hasAttribute("srcset")) {
-        //   const srcset = element.getAttribute("srcset");
-        //   if (srcset) {
-        //     const parts = srcset.split(",").map((part) => {
-        //       const [url, ...descriptors] = part.trim().split(/\s+/);
-        //       if (url && !url.startsWith("data:")) {
-        //         const rewrittenUrl = rewriteUrl(url, "mp_");
-        //         return [rewrittenUrl, ...descriptors].join(" ");
-        //       }
-        //       return part;
-        //     });
-        //     element.setAttribute("srcset", parts.join(", "));
-        //   }
-        // }
-
         if (element.hasAttribute("style")) {
           const style = element.getAttribute("style");
           if (style && style.includes("url(")) {
@@ -813,31 +749,26 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
   }
 
   function overrideNodeRelatedAPIs(): void {
+    function getSlaxEnv(): any {
+      return (window as any).slaxEnv;
+    }
+
+    function proxyToObj(obj: any): any {
+      const slaxEnv = getSlaxEnv();
+      return slaxEnv ? slaxEnv.proxyToObj(obj) : obj;
+    }
+
     const originalAppendChild = Node.prototype.appendChild;
     Node.prototype.appendChild = function <T extends Node>(newChild: T): T {
-      if (newChild instanceof Node) {
-        if (newChild instanceof HTMLElement) {
-          applyInterceptorsToNewElement(newChild);
-        }
-        //@ts-ignore
-        return originalAppendChild.call(this, newChild);
+      const realThis = proxyToObj(this);
+      const realNewChild = proxyToObj(newChild);
+
+      if (realNewChild instanceof HTMLElement) {
+        applyInterceptorsToNewElement(realNewChild);
       }
 
-      if (typeof newChild === "string") {
-        console.warn(
-          "[Node Interceptor] String passed to appendChild, converting to TextNode"
-        );
-        const textNode = document.createTextNode(newChild);
-        return originalAppendChild.call(this, textNode) as unknown as T;
-      }
-
-      try {
-        //@ts-ignore
-        return originalAppendChild.call(this, newChild);
-      } catch (e) {
-        console.warn("[Node Interceptor] Error in appendChild:", e);
-        return this as unknown as T;
-      }
+      //@ts-ignore
+      return originalAppendChild.call(realThis, realNewChild);
     };
 
     const originalInsertBefore = Node.prototype.insertBefore;
@@ -845,42 +776,16 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
       newChild: T,
       refChild: Node | null
     ): T {
-      try {
-        if (typeof newChild === "string") {
-          console.warn(
-            "[Node Interceptor] String passed to insertBefore, converting to TextNode"
-          );
-          const textNode = document.createTextNode(newChild);
-          return originalInsertBefore.call(
-            this,
-            textNode,
-            refChild
-          ) as unknown as T;
-        }
+      const realThis = proxyToObj(this);
+      const realNewChild = proxyToObj(newChild);
+      const realRefChild = refChild ? proxyToObj(refChild) : null;
 
-        if (!(newChild instanceof Node)) {
-          console.warn(
-            "[Node Interceptor] Invalid parameter passed to insertBefore:",
-            newChild
-          );
-          throw new TypeError(
-            "Failed to execute 'insertBefore' on 'Node': parameter 1 is not of type 'Node'"
-          );
-        }
-
-        if (newChild instanceof HTMLElement) {
-          applyInterceptorsToNewElement(newChild);
-        }
-        //@ts-ignore
-        return originalInsertBefore.call(this, newChild, refChild);
-      } catch (e) {
-        console.warn(
-          "[Node Interceptor] Error in insertBefore, using original method:",
-          e
-        );
-        //@ts-ignore
-        return originalInsertBefore.call(this, newChild, refChild);
+      if (realNewChild instanceof HTMLElement) {
+        applyInterceptorsToNewElement(realNewChild);
       }
+
+      //@ts-ignore
+      return originalInsertBefore.call(realThis, realNewChild, realRefChild);
     };
 
     const originalReplaceChild = Node.prototype.replaceChild;
@@ -889,87 +794,51 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
       newChild: T,
       oldChild: Node
     ): T {
-      try {
-        if (typeof newChild === "string") {
-          console.warn(
-            "[Node Interceptor] String passed to replaceChild, converting to TextNode"
-          );
-          const textNode = document.createTextNode(newChild);
-          return originalReplaceChild.call(
-            this,
-            textNode,
-            oldChild
-          ) as unknown as T;
-        }
+      const realThis = proxyToObj(this);
+      const realNewChild = proxyToObj(newChild);
+      const realOldChild = proxyToObj(oldChild);
 
-        if (!(newChild instanceof Node)) {
-          console.warn(
-            "[Node Interceptor] Invalid parameter passed to replaceChild:",
-            newChild
-          );
-          throw new TypeError(
-            "Failed to execute 'replaceChild' on 'Node': parameter 1 is not of type 'Node'"
-          );
-        }
-
-        if (newChild instanceof HTMLElement) {
-          applyInterceptorsToNewElement(newChild);
-        }
-        //@ts-ignore
-        return originalReplaceChild.call(this, newChild, oldChild);
-      } catch (e) {
-        console.warn(
-          "[Node Interceptor] Error in replaceChild, using original method:",
-          e
-        );
-        //@ts-ignore
-        return originalReplaceChild.call(this, newChild, oldChild);
+      if (realNewChild instanceof HTMLElement) {
+        applyInterceptorsToNewElement(realNewChild);
       }
+
+      //@ts-ignore
+      return originalReplaceChild.call(realThis, realNewChild, realOldChild);
     };
 
     if (Element.prototype.append) {
       const originalAppend = Element.prototype.append;
       Element.prototype.append = function (...nodes: (Node | string)[]) {
-        try {
-          const processedNodes = nodes.map((node) => {
-            if (node instanceof HTMLElement) {
-              applyInterceptorsToNewElement(node);
-              return node;
-            }
-            return node;
-          });
+        const processedNodes = nodes.map((node) => {
+          if (typeof node === "string") return node;
 
-          return originalAppend.apply(this, processedNodes);
-        } catch (e) {
-          console.warn(
-            "[Node Interceptor] Error in append, using original method:",
-            e
-          );
-          return originalAppend.apply(this, nodes);
-        }
+          const realNode = proxyToObj(node);
+          if (realNode instanceof HTMLElement) {
+            applyInterceptorsToNewElement(realNode);
+          }
+          return realNode;
+        });
+
+        const realThis = proxyToObj(this);
+        return originalAppend.apply(realThis, processedNodes);
       };
     }
 
     if (Element.prototype.prepend) {
       const originalPrepend = Element.prototype.prepend;
       Element.prototype.prepend = function (...nodes: (Node | string)[]) {
-        try {
-          const processedNodes = nodes.map((node) => {
-            if (node instanceof HTMLElement) {
-              applyInterceptorsToNewElement(node);
-              return node;
-            }
-            return node;
-          });
+        const processedNodes = nodes.map((node) => {
+          if (typeof node === "string") return node;
 
-          return originalPrepend.apply(this, processedNodes);
-        } catch (e) {
-          console.warn(
-            "[Node Interceptor] Error in prepend, using original method:",
-            e
-          );
-          return originalPrepend.apply(this, nodes);
-        }
+          const realNode = proxyToObj(node);
+          if (realNode instanceof HTMLElement) {
+            applyInterceptorsToNewElement(realNode);
+          }
+          return realNode;
+        });
+
+        const realThis = proxyToObj(this);
+        return originalPrepend.apply(realThis, processedNodes);
       };
     }
 
@@ -978,48 +847,40 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
       name: string,
       value: string
     ): void {
-      try {
-        if (name === "integrity" && this instanceof HTMLScriptElement) {
-          return;
-        }
-
-        const urlAttributes = ["src", "href", "action", "data-src"];
-        if (urlAttributes.includes(name) && typeof value === "string") {
-          let mod = "mp_";
-
-          if (this instanceof HTMLScriptElement && name === "src") {
-            mod = "js_";
-          } else if (
-            this instanceof HTMLLinkElement &&
-            name === "href" &&
-            (this.rel === "stylesheet" ||
-              this.as === "style" ||
-              (value && value.endsWith(".css")))
-          ) {
-            mod = "cs_";
-          }
-
-          const rewrittenValue = rewriteUrl(value, mod);
-          return originalSetAttribute.call(this, name, rewrittenValue);
-        }
-
-        if (
-          name === "style" &&
-          typeof value === "string" &&
-          value.includes("url(")
-        ) {
-          const rewrittenStyle = rewriteCssUrls(value);
-          return originalSetAttribute.call(this, name, rewrittenStyle);
-        }
-
-        return originalSetAttribute.call(this, name, value);
-      } catch (e) {
-        console.warn(
-          "[Node Interceptor] Error in setAttribute, using original method:",
-          e
-        );
-        return originalSetAttribute.call(this, name, value);
+      if (name === "integrity" && this instanceof HTMLScriptElement) {
+        return;
       }
+
+      const urlAttributes = ["src", "href", "action", "data-src"];
+      if (urlAttributes.includes(name) && typeof value === "string") {
+        let mod = "mp_";
+
+        if (this instanceof HTMLScriptElement && name === "src") {
+          mod = this.getAttribute("type") === "module" ? "esm_" : "js_";
+        } else if (
+          this instanceof HTMLLinkElement &&
+          name === "href" &&
+          (this.rel === "stylesheet" ||
+            this.as === "style" ||
+            (value && value.endsWith(".css")))
+        ) {
+          mod = "cs_";
+        }
+
+        const rewrittenValue = rewriteUrl(value, mod);
+        return originalSetAttribute.call(this, name, rewrittenValue);
+      }
+
+      if (
+        name === "style" &&
+        typeof value === "string" &&
+        value.includes("url(")
+      ) {
+        const rewrittenStyle = rewriteCssUrls(value);
+        return originalSetAttribute.call(this, name, rewrittenStyle);
+      }
+
+      return originalSetAttribute.call(this, name, value);
     };
   }
 
@@ -1120,14 +981,9 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
     }
 
     function getOriginalObject(obj: any): any {
-      if (obj && typeof obj === "object" && obj._SLAX_obj_proxy) {
-        for (const [origObj, proxyObj] of (
-          window as any
-        ).slaxEnv.objProxies.entries()) {
-          if (proxyObj === obj) {
-            return origObj;
-          }
-        }
+      const slaxEnv = (window as any).slaxEnv;
+      if (slaxEnv && obj && typeof obj === "object" && obj._SLAX_obj_proxy) {
+        return slaxEnv.proxyToObj(obj);
       }
       return obj;
     }
@@ -1158,6 +1014,14 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
   }
 
   function overrideNodeMethods(): void {
+    function getOriginalObject(obj: any): any {
+      const slaxEnv = (window as any).slaxEnv;
+      if (slaxEnv && obj && typeof obj === "object" && obj._SLAX_obj_proxy) {
+        return slaxEnv.proxyToObj(obj);
+      }
+      return obj;
+    }
+
     const originalCreateTreeWalker = Document.prototype.createTreeWalker;
     Document.prototype.createTreeWalker = function (
       root: Node,
@@ -1165,20 +1029,13 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
       filter?: NodeFilter | null,
       entityReferenceExpansion?: boolean
     ): TreeWalker {
-      //@ts-ignore
-      if (root && typeof root === "object" && root._SLAX_obj_proxy) {
-        for (const [origObj, proxyObj] of (
-          window as any
-        ).slaxEnv.objProxies.entries()) {
-          if (proxyObj === root) {
-            root = origObj;
-            break;
-          }
-        }
-      }
+      const originalRoot = getOriginalObject(root);
 
-      if (!(root instanceof Node)) {
-        console.error("[TreeWalker Interceptor] Invalid root node:", root);
+      if (!(originalRoot instanceof Node)) {
+        console.error(
+          "[TreeWalker Interceptor] Invalid root node:",
+          originalRoot
+        );
         throw new TypeError(
           "Failed to execute 'createTreeWalker' on 'Document': parameter 1 is not of type 'Node'."
         );
@@ -1186,7 +1043,7 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
 
       return originalCreateTreeWalker.call(
         this,
-        root,
+        originalRoot,
         whatToShow || 0,
         filter || null,
         //@ts-ignore
@@ -1201,20 +1058,13 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
         whatToShow?: number,
         filter?: NodeFilter | null
       ): NodeIterator {
-        //@ts-ignore
-        if (root && typeof root === "object" && root._SLAX_obj_proxy) {
-          for (const [origObj, proxyObj] of (
-            window as any
-          ).slaxEnv.objProxies.entries()) {
-            if (proxyObj === root) {
-              root = origObj;
-              break;
-            }
-          }
-        }
+        const originalRoot = getOriginalObject(root);
 
-        if (!(root instanceof Node)) {
-          console.error("[NodeIterator Interceptor] Invalid root node:", root);
+        if (!(originalRoot instanceof Node)) {
+          console.error(
+            "[NodeIterator Interceptor] Invalid root node:",
+            originalRoot
+          );
           throw new TypeError(
             "Failed to execute 'createNodeIterator' on 'Document': parameter 1 is not of type 'Node'."
           );
@@ -1222,7 +1072,7 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
 
         return originalCreateNodeIterator.call(
           this,
-          root,
+          originalRoot,
           whatToShow || 0,
           filter || null
         );
@@ -1232,68 +1082,18 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
     if (Range.prototype.setStart) {
       const originalSetStart = Range.prototype.setStart;
       Range.prototype.setStart = function (node: Node, offset: number): void {
-        //@ts-ignore
-        if (node && typeof node === "object" && node._SLAX_obj_proxy) {
-          for (const [origObj, proxyObj] of (
-            window as any
-          ).slaxEnv.objProxies.entries()) {
-            if (proxyObj === node) {
-              node = origObj;
-              break;
-            }
-          }
-        }
-
-        return originalSetStart.call(this, node, offset);
+        const originalNode = getOriginalObject(node);
+        return originalSetStart.call(this, originalNode, offset);
       };
     }
 
     if (Range.prototype.setEnd) {
       const originalSetEnd = Range.prototype.setEnd;
       Range.prototype.setEnd = function (node: Node, offset: number): void {
-        //@ts-ignore
-        if (node && typeof node === "object" && node._SLAX_obj_proxy) {
-          for (const [origObj, proxyObj] of (
-            window as any
-          ).slaxEnv.objProxies.entries()) {
-            if (proxyObj === node) {
-              node = origObj;
-              break;
-            }
-          }
-        }
-
-        return originalSetEnd.call(this, node, offset);
+        const originalNode = getOriginalObject(node);
+        return originalSetEnd.call(this, originalNode, offset);
       };
     }
-
-    const nodeMethodsToFix = [
-      "appendChild",
-      "insertBefore",
-      "replaceChild",
-      "removeChild",
-    ];
-
-    nodeMethodsToFix.forEach((methodName) => {
-      const originalMethod = Node.prototype[methodName];
-      // @ts-ignore
-      Node.prototype[methodName] = function (...args) {
-        const processedArgs = args.map((arg) => {
-          if (arg && typeof arg === "object" && arg._SLAX_obj_proxy) {
-            for (const [origObj, proxyObj] of (
-              window as any
-            ).slaxEnv.objProxies.entries()) {
-              if (proxyObj === arg) {
-                return origObj;
-              }
-            }
-          }
-          return arg;
-        });
-
-        return originalMethod.apply(this, processedArgs);
-      };
-    });
 
     if (TreeWalker && TreeWalker.prototype) {
       const originalCurrentNodeDesc = Object.getOwnPropertyDescriptor(
@@ -1307,25 +1107,19 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
             return originalCurrentNodeDesc.get!.call(this);
           },
           set: function (value) {
-            if (value && typeof value === "object" && value._SLAX_obj_proxy) {
-              for (const [origObj, proxyObj] of (
-                window as any
-              ).slaxEnv.objProxies.entries()) {
-                if (proxyObj === value) {
-                  value = origObj;
-                  break;
-                }
-              }
-            }
+            const originalValue = getOriginalObject(value);
 
-            if (!(value instanceof Node)) {
-              console.error("[TreeWalker Interceptor] Invalid node:", value);
+            if (!(originalValue instanceof Node)) {
+              console.error(
+                "[TreeWalker Interceptor] Invalid node:",
+                originalValue
+              );
               throw new TypeError(
                 "Failed to set the 'currentNode' property on 'TreeWalker': Failed to convert value to 'Node'."
               );
             }
 
-            return originalCurrentNodeDesc.set!.call(this, value);
+            return originalCurrentNodeDesc.set!.call(this, originalValue);
           },
           enumerable: originalCurrentNodeDesc.enumerable,
           configurable: originalCurrentNodeDesc.configurable,
@@ -1343,6 +1137,10 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
     if (!originalDefaultViewDesc || originalDefaultViewDesc.configurable) {
       Object.defineProperty(Document.prototype, "defaultView", {
         get: function () {
+          const slaxEnv = (window as any).slaxEnv;
+          if (slaxEnv && slaxEnv.objProxies.has(window)) {
+            return slaxEnv.objProxies.get(window);
+          }
           return window;
         },
         configurable: true,
@@ -1407,9 +1205,6 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
         return "mp_";
       }
     );
-
-    // createSrcsetInterceptor(HTMLImageElement.prototype);
-    // createSrcsetInterceptor(HTMLSourceElement.prototype);
 
     createPropertyInterceptor(HTMLFormElement.prototype, "action", "mp_");
   }

@@ -14,6 +14,12 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
   if ((window as any).__URL_REWRITER_INITIALIZED__) return;
   (window as any).__URL_REWRITER_INITIALIZED__ = true;
 
+  (window as any).rewriteUrl = rewriteUrl;
+  (window as any).rewriteHTMLContent = rewriteHTMLContent;
+  (window as any).rewriteCssUrls = rewriteCssUrls;
+  (window as any).extractOriginalUrl = extractOriginalUrl;
+  (window as any).applyInterceptorsToNewElement = applyInterceptorsToNewElement;
+
   function rewriteUrl(url: string, mod: string): string {
     if (!url || typeof url !== "string") return url;
     if (url.startsWith(proxyURL)) return url;
@@ -55,23 +61,6 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
       const rewrittenHTML = rewriteHTMLContent(html);
       return originalInsertAdjacentHTML.call(this, position, rewrittenHTML);
     };
-    // const originInsertAdjacentElement = Element.prototype.insertAdjacentElement;
-    // Element.prototype.insertAdjacentElement = function (position, element) {
-    //   const rewrittenElement = rewriteElement(element);
-    //   return originalInsertAdjacentElement.call(
-    //     this,
-    //     position,
-    //     rewrittenElement
-    //   );
-    // };
-  }
-
-  function overrideElementGetSetAttribute(): void {
-    const originalGetAttribute = Element.prototype.getAttribute;
-    Element.prototype.getAttribute = function (name) {
-      const value = originalGetAttribute.call(this, name);
-      return extractOriginalUrl(value || "");
-    };
   }
 
   function createPropertyInterceptor(
@@ -106,37 +95,6 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
       configurable: true,
     });
   }
-
-  // function createSrcsetInterceptor(prototype: any): void {
-  //   const srcsetPropName = "_originalSrcset";
-
-  //   Object.defineProperty(prototype, "srcset", {
-  //     get: function (this: HTMLElement): string {
-  //       return (this as any)[srcsetPropName] || "";
-  //     },
-  //     set: function (this: HTMLElement, value: string): void {
-  //       (this as any)[srcsetPropName] = value;
-
-  //       if (!value) {
-  //         this.setAttribute("srcset", "");
-  //         return;
-  //       }
-
-  //       const parts = value.split(",").map((part) => {
-  //         const [url, ...descriptors] = part.trim().split(/\s+/);
-  //         if (url && !url.startsWith("data:")) {
-  //           const rewrittenUrl = rewriteUrl(url, "mp_");
-  //           return [rewrittenUrl, ...descriptors].join(" ");
-  //         }
-  //         return part;
-  //       });
-
-  //       this.setAttribute("srcset", parts.join(", "));
-  //     },
-  //     enumerable: true,
-  //     configurable: true,
-  //   });
-  // }
 
   function rewriteCssUrls(value: string): string {
     if (!value || typeof value !== "string" || !value.includes("url(")) {
@@ -185,34 +143,6 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
 
       return originalSetProperty.call(this, propertyName, value, priority);
     };
-
-    cssPropertiesToRewrite.forEach((propName) => {
-      const camelCaseProp = propName.replace(
-        /-([a-z])/g,
-        (_, letter: string): string => letter.toUpperCase()
-      );
-
-      const originalDescriptor = Object.getOwnPropertyDescriptor(
-        CSSStyleDeclaration.prototype,
-        camelCaseProp
-      );
-
-      if (originalDescriptor) {
-        Object.defineProperty(CSSStyleDeclaration.prototype, camelCaseProp, {
-          get: function (this: CSSStyleDeclaration): string {
-            return originalDescriptor.get!.call(this);
-          },
-          set: function (this: CSSStyleDeclaration, value: string): void {
-            if (value && typeof value === "string" && value.includes("url(")) {
-              value = rewriteCssUrls(value);
-            }
-            originalDescriptor.set!.call(this, value);
-          },
-          enumerable: true,
-          configurable: true,
-        });
-      }
-    });
   }
 
   function overrideFetch(): void {
@@ -616,7 +546,7 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
     element.setAttribute = function (name: string, value: string): void {
       if (name === attributeName) {
         const rewrittenValue = rewriteUrl(value, mod);
-        return originalSetAttribute.call(this, name, value);
+        return originalSetAttribute.call(this, name, rewrittenValue);
       }
       return originalSetAttribute.call(this, name, value);
     };
@@ -747,6 +677,7 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
         },
         set: function (html: string) {
           originalInnerHTMLDescriptor.set!.call(this, html);
+
           if (this instanceof HTMLElement) {
             Array.from(this.querySelectorAll("*")).forEach((element) => {
               if (element instanceof HTMLElement) {
@@ -787,32 +718,10 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
         configurable: originalOuterHTMLDescriptor.configurable,
       });
     }
-
-    const originalInsertAdjacentHTML = Element.prototype.insertAdjacentHTML;
-    Element.prototype.insertAdjacentHTML = function (position, html) {
-      const rewrittenHTML = rewriteHTMLContent(html);
-      originalInsertAdjacentHTML.call(this, position, rewrittenHTML);
-
-      if (this instanceof HTMLElement) {
-        const elementsToCheck = Array.from(this.querySelectorAll("*"));
-        if (position === "beforebegin" || position === "afterend") {
-          if (this.parentElement) {
-            elementsToCheck.push(
-              ...Array.from(this.parentElement.querySelectorAll("*"))
-            );
-          }
-        }
-
-        elementsToCheck.forEach((element) => {
-          if (element instanceof HTMLElement) {
-            applyInterceptorsToNewElement(element);
-          }
-        });
-      }
-    };
   }
 
   function overrideNodeRelatedAPIs(): void {
+    // 覆盖appendChild
     const originalAppendChild = Node.prototype.appendChild;
     Node.prototype.appendChild = function <T extends Node>(newChild: T): T {
       if (newChild instanceof Node) {
@@ -824,20 +733,10 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
       }
 
       if (typeof newChild === "string") {
-        console.warn(
-          "[Node Interceptor] String passed to appendChild, converting to TextNode"
-        );
-        const textNode = document.createTextNode(newChild);
-        return originalAppendChild.call(this, textNode) as unknown as T;
+        return originalAppendChild.call(this, newChild) as unknown as T;
       }
-
-      try {
-        //@ts-ignore
-        return originalAppendChild.call(this, newChild);
-      } catch (e) {
-        console.warn("[Node Interceptor] Error in appendChild:", e);
-        return this as unknown as T;
-      }
+      //@ts-ignore
+      return originalAppendChild.call(this, newChild);
     };
 
     const originalInsertBefore = Node.prototype.insertBefore;
@@ -888,18 +787,14 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
     Node.prototype.replaceChild = function <T extends Node>(
       newChild: T,
       oldChild: Node
-    ): T {
+    ): Node {
       try {
         if (typeof newChild === "string") {
           console.warn(
             "[Node Interceptor] String passed to replaceChild, converting to TextNode"
           );
           const textNode = document.createTextNode(newChild);
-          return originalReplaceChild.call(
-            this,
-            textNode,
-            oldChild
-          ) as unknown as T;
+          return originalReplaceChild.call(this, textNode, oldChild);
         }
 
         if (!(newChild instanceof Node)) {
@@ -988,7 +883,7 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
           let mod = "mp_";
 
           if (this instanceof HTMLScriptElement && name === "src") {
-            mod = "js_";
+            mod = this.getAttribute("type") === "module" ? "esm_" : "js_";
           } else if (
             this instanceof HTMLLinkElement &&
             name === "href" &&
@@ -997,20 +892,22 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
               (value && value.endsWith(".css")))
           ) {
             mod = "cs_";
+          } else if (this instanceof HTMLIFrameElement && name === "src") {
+            mod = "if_";
           }
 
           const rewrittenValue = rewriteUrl(value, mod);
           return originalSetAttribute.call(this, name, rewrittenValue);
         }
 
-        if (
-          name === "style" &&
-          typeof value === "string" &&
-          value.includes("url(")
-        ) {
-          const rewrittenStyle = rewriteCssUrls(value);
-          return originalSetAttribute.call(this, name, rewrittenStyle);
-        }
+        // if (
+        //   name === "style" &&
+        //   typeof value === "string" &&
+        //   value.includes("url(")
+        // ) {
+        //   const rewrittenStyle = rewriteCssUrls(value);
+        //   return originalSetAttribute.call(this, name, rewrittenStyle);
+        // }
 
         return originalSetAttribute.call(this, name, value);
       } catch (e) {
@@ -1021,11 +918,19 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
         return originalSetAttribute.call(this, name, value);
       }
     };
+
+    const originalGetAttribute = Element.prototype.getAttribute;
+    Element.prototype.getAttribute = function (name: string): string | null {
+      const value = originalGetAttribute.call(this, name);
+      if (["src", "href", "action", "data-src"].includes(name) && value) {
+        return extractOriginalUrl(value) || value;
+      }
+      return value;
+    };
   }
 
   function overrideImport(): void {
-    //@ts-ignore
-    window.__slax_js_import__ = function (base: string, url: string) {
+    (window as any).__slax_js_import__ = function (base: string, url: string) {
       return import(/*webpackIgnore: true*/ rewriteUrl(url, "esm_"));
     };
   }
@@ -1056,7 +961,8 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
       let rewrittenUrl = url;
 
       if (!originalUrl || !urlStr) {
-        console.warn("[History Interceptor] Failed to extract original URL");
+        console.warn("[History API] Invalid URL");
+        originalPushState.call(this, state, title, url);
         return;
       }
 
@@ -1064,9 +970,7 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
         const parser = makeURLParser(originalUrl, document);
         const resolvedURL = parser.href;
         //@ts-ignore
-        rewrittenUrl = rewriteUrl(resolvedURL);
-
-        console.log(`pushState: ${originalUrl} -> ${rewrittenUrl}`);
+        rewrittenUrl = rewriteUrl(resolvedURL, "mp_");
       }
 
       originalPushState.call(this, state, title, rewrittenUrl);
@@ -1081,16 +985,17 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
       const originalUrl = extractOriginalUrl(urlStr);
       let rewrittenUrl = url;
 
+      if (!originalUrl || !urlStr) {
+        console.warn("[History API] Invalid URL");
+        originalReplaceState.call(this, state, title, url);
+        return;
+      }
+
       if (originalUrl) {
         const parser = makeURLParser(originalUrl, document);
         const resolvedURL = parser.href;
         //@ts-ignore
-        rewrittenUrl = rewriteUrl(resolvedURL);
-      }
-
-      if (!originalUrl || !urlStr) {
-        console.warn("[History Interceptor] Failed to extract original URL");
-        return;
+        rewrittenUrl = rewriteUrl(resolvedURL, "mp_");
       }
 
       originalReplaceState.call(this, state, title, rewrittenUrl);
@@ -1158,179 +1063,43 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
   }
 
   function overrideNodeMethods(): void {
-    const originalCreateTreeWalker = Document.prototype.createTreeWalker;
-    Document.prototype.createTreeWalker = function (
-      root: Node,
-      whatToShow?: number,
-      filter?: NodeFilter | null,
-      entityReferenceExpansion?: boolean
-    ): TreeWalker {
-      //@ts-ignore
-      if (root && typeof root === "object" && root._SLAX_obj_proxy) {
-        for (const [origObj, proxyObj] of (
-          window as any
-        ).slaxEnv.objProxies.entries()) {
-          if (proxyObj === root) {
-            root = origObj;
-            break;
-          }
-        }
-      }
-
-      if (!(root instanceof Node)) {
-        console.error("[TreeWalker Interceptor] Invalid root node:", root);
-        throw new TypeError(
-          "Failed to execute 'createTreeWalker' on 'Document': parameter 1 is not of type 'Node'."
-        );
-      }
-
-      return originalCreateTreeWalker.call(
-        this,
-        root,
-        whatToShow || 0,
-        filter || null,
-        //@ts-ignore
-        entityReferenceExpansion || false
-      );
-    };
-
-    if (Document.prototype.createNodeIterator) {
-      const originalCreateNodeIterator = Document.prototype.createNodeIterator;
-      Document.prototype.createNodeIterator = function (
+    if (Document.prototype.createTreeWalker) {
+      const originalCreateTreeWalker = Document.prototype.createTreeWalker;
+      Document.prototype.createTreeWalker = function (
         root: Node,
         whatToShow?: number,
-        filter?: NodeFilter | null
-      ): NodeIterator {
-        //@ts-ignore
-        if (root && typeof root === "object" && root._SLAX_obj_proxy) {
+        filter?: NodeFilter | null,
+        entityReferenceExpansion?: boolean
+      ): TreeWalker {
+        let originalRoot = root;
+
+        if (root && typeof root === "object" && (root as any)._SLAX_obj_proxy) {
           for (const [origObj, proxyObj] of (
             window as any
           ).slaxEnv.objProxies.entries()) {
             if (proxyObj === root) {
-              root = origObj;
+              originalRoot = origObj;
               break;
             }
           }
         }
 
-        if (!(root instanceof Node)) {
-          console.error("[NodeIterator Interceptor] Invalid root node:", root);
+        if (!(originalRoot instanceof Node)) {
+          console.error("[TreeWalker] Invalid root node:", originalRoot);
           throw new TypeError(
-            "Failed to execute 'createNodeIterator' on 'Document': parameter 1 is not of type 'Node'."
+            "Failed to execute 'createTreeWalker' on 'Document': parameter 1 is not of type 'Node'."
           );
         }
 
-        return originalCreateNodeIterator.call(
+        return originalCreateTreeWalker.call(
           this,
-          root,
+          originalRoot,
           whatToShow || 0,
-          filter || null
+          filter || null,
+          //@ts-ignore
+          entityReferenceExpansion || false
         );
       };
-    }
-
-    if (Range.prototype.setStart) {
-      const originalSetStart = Range.prototype.setStart;
-      Range.prototype.setStart = function (node: Node, offset: number): void {
-        //@ts-ignore
-        if (node && typeof node === "object" && node._SLAX_obj_proxy) {
-          for (const [origObj, proxyObj] of (
-            window as any
-          ).slaxEnv.objProxies.entries()) {
-            if (proxyObj === node) {
-              node = origObj;
-              break;
-            }
-          }
-        }
-
-        return originalSetStart.call(this, node, offset);
-      };
-    }
-
-    if (Range.prototype.setEnd) {
-      const originalSetEnd = Range.prototype.setEnd;
-      Range.prototype.setEnd = function (node: Node, offset: number): void {
-        //@ts-ignore
-        if (node && typeof node === "object" && node._SLAX_obj_proxy) {
-          for (const [origObj, proxyObj] of (
-            window as any
-          ).slaxEnv.objProxies.entries()) {
-            if (proxyObj === node) {
-              node = origObj;
-              break;
-            }
-          }
-        }
-
-        return originalSetEnd.call(this, node, offset);
-      };
-    }
-
-    const nodeMethodsToFix = [
-      "appendChild",
-      "insertBefore",
-      "replaceChild",
-      "removeChild",
-    ];
-
-    nodeMethodsToFix.forEach((methodName) => {
-      const originalMethod = Node.prototype[methodName];
-      // @ts-ignore
-      Node.prototype[methodName] = function (...args) {
-        const processedArgs = args.map((arg) => {
-          if (arg && typeof arg === "object" && arg._SLAX_obj_proxy) {
-            for (const [origObj, proxyObj] of (
-              window as any
-            ).slaxEnv.objProxies.entries()) {
-              if (proxyObj === arg) {
-                return origObj;
-              }
-            }
-          }
-          return arg;
-        });
-
-        return originalMethod.apply(this, processedArgs);
-      };
-    });
-
-    if (TreeWalker && TreeWalker.prototype) {
-      const originalCurrentNodeDesc = Object.getOwnPropertyDescriptor(
-        TreeWalker.prototype,
-        "currentNode"
-      );
-
-      if (originalCurrentNodeDesc && originalCurrentNodeDesc.set) {
-        Object.defineProperty(TreeWalker.prototype, "currentNode", {
-          get: function () {
-            return originalCurrentNodeDesc.get!.call(this);
-          },
-          set: function (value) {
-            if (value && typeof value === "object" && value._SLAX_obj_proxy) {
-              for (const [origObj, proxyObj] of (
-                window as any
-              ).slaxEnv.objProxies.entries()) {
-                if (proxyObj === value) {
-                  value = origObj;
-                  break;
-                }
-              }
-            }
-
-            if (!(value instanceof Node)) {
-              console.error("[TreeWalker Interceptor] Invalid node:", value);
-              throw new TypeError(
-                "Failed to set the 'currentNode' property on 'TreeWalker': Failed to convert value to 'Node'."
-              );
-            }
-
-            return originalCurrentNodeDesc.set!.call(this, value);
-          },
-          enumerable: originalCurrentNodeDesc.enumerable,
-          configurable: originalCurrentNodeDesc.configurable,
-        });
-      }
     }
   }
 
@@ -1408,46 +1177,27 @@ window.proxyPrefixPathRegexp = new RegExp("${proxyPrefixPathRegexpStr}");
       }
     );
 
-    // createSrcsetInterceptor(HTMLImageElement.prototype);
-    // createSrcsetInterceptor(HTMLSourceElement.prototype);
-
     createPropertyInterceptor(HTMLFormElement.prototype, "action", "mp_");
   }
 
   function initAllInterceptors(): void {
-    //@ts-ignore
-    window._slaxLocation = new SlaxLocation(window.location);
-    //@ts-ignore
-    window.slaxEnv = new SlaxEnv(window);
+    (window as any)._slaxLocation = new SlaxLocation(window.location);
+    (window as any).slaxEnv = new SlaxEnv(window);
 
     initElementInterceptors();
-
     overrideStyleProperties();
-
     overrideNodeMethods();
-
     overrideFetch();
     overrideXHR();
-
     overrideWorkers();
-
     overrideQuerySelectors();
-
     disableNotifications();
     disableGeolocation();
     overrideBeacon();
-
     initDOMInterceptors();
-
     overrideDocumentDefaultView();
-
     overrideImport();
-
     overrideHistoryMethods();
-
-    overrideElementGetSetAttribute();
-
-    overrideInsertAdjacentHTML();
   }
 
   initAllInterceptors();
